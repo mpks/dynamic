@@ -1,6 +1,5 @@
 import sys
 import os
-import dynamic
 
 # Configuration file for the Sphinx documentation builder.
 #
@@ -9,6 +8,18 @@ import dynamic
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
+
+on_rtd = os.environ.get("READTHEDOCS") == "True"
+
+if on_rtd:
+    autodoc_mock_imports = [
+        "dials",
+        "dials.array_family",
+        "cctbx",
+        "scitbx",
+        "iotbx",
+        "libtbx",
+    ]
 
 sys.path.insert(0, os.path.abspath('.'))
 project = 'ccp4-ed'
