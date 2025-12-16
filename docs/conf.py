@@ -1,5 +1,6 @@
 import sys
 import os
+import dynamic
 
 # Configuration file for the Sphinx documentation builder.
 #
@@ -9,7 +10,7 @@ import os
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-sys.path.insert(0, os.path.abspath('.'))
+sys.path.insert(0, os.path.abspath('..'))
 project = 'ccp4-ed'
 copyright = '2025, Marko Petrovic'
 author = 'Marko Petrovic'
@@ -20,11 +21,19 @@ numfig_format = {'figure': 'Fig. %s', }
 
 extensions = [
     "sphinx.ext.autodoc",
+    "sphinx.ext.autosummary",
     "sphinx.ext.mathjax",
     "sphinx.ext.viewcode",
     "sphinx_rtd_theme",
     "sphinx.ext.napoleon",
 ]
+
+autodoc_default_options = {
+    "members": True,
+    "undoc-members": True,
+    "private-members": False,
+    "show-inheritance": True,
+}
 
 mathjax3_config = {
         'chtml': {'displayAlign': 'left', 'displayIndent': '2em'},

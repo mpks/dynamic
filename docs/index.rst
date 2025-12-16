@@ -17,3 +17,4 @@ documentation for details.
     
    pages/theory
    pages/progress
+   pages/dynamic_api
