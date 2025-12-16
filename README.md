@@ -1,4 +1,4 @@
-# dynamic package
+# Package Dynamic
 
-A package for correcting dynamical ED diffraction.
+A package for correcting dynamical ED diffraction effects.
 
