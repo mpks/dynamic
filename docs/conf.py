@@ -63,9 +63,12 @@ pygments_style = "sphinx"
 
 html_context = {
   'display_github': True,
+  "github_user": "mpks",
+  "github_repo": "dynamic",
+  "github_version": "master",
+  "conf_py_path": "/docs/",
   'current_language': 'en',
   'current_version': "1.0",
-  "github_user": "mpks",
 }
 
 html_theme = 'sphinx_rtd_theme'
