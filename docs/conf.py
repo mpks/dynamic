@@ -10,7 +10,7 @@ import dynamic
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-sys.path.insert(0, os.path.abspath('..'))
+sys.path.insert(0, os.path.abspath('.'))
 project = 'ccp4-ed'
 copyright = '2025, Marko Petrovic'
 author = 'Marko Petrovic'
