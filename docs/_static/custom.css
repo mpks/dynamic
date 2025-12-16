@@ -1,0 +1,42 @@
+
+.eqno {
+    float: right;
+}
+
+
+/* Apply only to list-tables in Sphinx */
+.list-table {
+    table-layout: fixed;  /* force fixed column widths */
+    width: 100%;          /* table fills page width */
+}
+
+.list-table td {
+    width: 33%;            /* column width */
+    white-space: normal;
+    word-wrap: break-word; /* wrap long captions */
+    overflow-wrap: break-word;
+    vertical-align: top;   /* images stay at top */
+    text-align: center;    /* optional */
+}
+
+.list-table img.zoomable {
+    width: 100%;          /* image fills the cell */
+    height: auto;         /* maintain aspect ratio */
+}
+
+/* Force table cells to respect column widths and wrap text */
+.wy-table-responsive table td,
+.wy-table-responsive table th {
+    white-space: normal !important;  /* allow wrapping */
+    word-wrap: break-word;           /* legacy support */
+    overflow-wrap: break-word;       /* modern support */
+    vertical-align: top;             /* keep images at top */
+    text-align: left;              /* optional: center captions */
+}
+
+/* Make zoomable images fill the cell */
+.list-table img.zoomable {
+    width: 100%;
+    height: auto;  /* maintain aspect ratio */
+}
+
