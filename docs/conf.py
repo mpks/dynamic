@@ -23,7 +23,7 @@ if on_rtd:
     ]
 
 sys.path.insert(0, os.path.abspath('.'))
-project = 'ccp4-ed'
+project = 'Dynamic'
 copyright = '2025, Marko Petrovic'
 author = 'Marko Petrovic'
 
@@ -37,6 +37,7 @@ extensions = [
     "sphinx.ext.mathjax",
     "sphinx.ext.viewcode",
     "sphinx_rtd_theme",
+    "sphinxcontrib.bibtex",
     "sphinx.ext.napoleon",
 ]
 
@@ -76,3 +77,11 @@ html_theme = 'sphinx_rtd_theme'
 html_static_path = ['_static']
 html_js_files = ["lightbox.js"]
 html_css_files = ['custom.css', 'lightbox.css']
+bibtex_bibfiles = ["refs.bib"]
+bibtex_reference_style = "author_year"
+
+rst_epilog = """
+.. _point_nets: https://web.stanford.edu/~rqi/pointnet/
+.. _ccp4-ed: https://www.ccp4.ac.uk/ccp4-ed/
+.. _python-docs: https://docs.python.org/3/
+"""
