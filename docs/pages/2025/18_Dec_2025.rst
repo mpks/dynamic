@@ -14,8 +14,7 @@
  - Created a global fitter function.
  -  Model built using these parameters
  - *Spot property*: H, K, L, intensity, sigma, resolution
- - *Dataset property*: average :math:`{\rm F}_o`, median :math:`{\rm
-     Fo}`
+ - *Dataset property*: average :math:`{\rm F}_o`, median :math:`{\rm Fo}`
 
 .. list-table::
    :widths: 33 33 33
@@ -36,8 +35,7 @@
 - Created a local fitter function. 
   Model built using these parameters
 - *Spot property*: H, K, L, intensity, sigma, resolution
-- *Dataset property*: average :math:`{\rm F}_o`, median :math:`{\rm
-  Fo}`
+- *Dataset property*: average :math:`{\rm F}_o`, median :math:`{\rm Fo}`
 - *Neighbor property*: min neighbor intensity, max neighbor intensity,
   90 percentile neighbor intensity, IQR neighbor intensity,
   max neighbor resolution, min neighbor resolution, average neighbor
