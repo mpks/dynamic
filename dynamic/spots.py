@@ -11,12 +11,41 @@ import matplotlib.pyplot as plt
 
 class Spot:
 
-    def __init__(self, H, K, L, intensity, sigma, z=None,
-                 resolution=None, Fc=None, Fo_corrected=None):
+    def __init__(self,
+                 H: int,
+                 K: int,
+                 L: int,
+                 intensity: float,
+                 sigma: float,
+                 x: float = None,
+                 y: float = None,
+                 z: int = None,
+                 resolution: float = None,
+                 Fc: float = None,
+                 Fo_corrected: float = None
+                 ) -> None:
+
+        """
+        Spots object
+
+        Parameters
+        ----------
+
+        H : integer
+            Miller index H.
+        K : integer
+            Miller index K.
+        L : integer
+            Miller index L.
+
+
+        """
 
         self.H = H
         self.K = K
         self.L = L
+        self.x = x
+        self.y = y
         self.z = z
         self.miller = (H, K, L)
         self.intensity = intensity
@@ -24,9 +53,8 @@ class Spot:
         self.resolution = resolution
         self.Fc = Fc
         self.Fo = None
-        self.Fo_scaled = None
-        self.scale_correct = None
-        self.Fo_corrected = Fo_corrected
+        self.Fo_scaled = None               # Fo scaled to the Fc scale
+        self.Fo_corrected = Fo_corrected    # On the same scale as Fo
 
 
 class SpotsList:
@@ -38,14 +66,117 @@ class SpotsList:
                  ) -> None:
 
         if material == 'paracetamol':
-            cif_file = '/home/marko/active/dyn/data/our_paracetamol.cif'
+            cif_file = '/home/marko/active/dd/data/our_paracetamol.cif'
         else:
             raise ValueError('Unknown material: ', material)
         self.material = material
         self.cif_file = cif_file
         self.spots = spots
         self.output_prefix = output_prefix
-        self.scale = 1.0
+        self.global_scale = 1.0
+        self.average_Fo = None
+        self.median_Fo = None
+
+    @classmethod
+    def from_npz(cls, npz_file):
+
+        data = np.load(npz_file, allow_pickle=True)
+
+        Hs = data['Hs']
+        Ks = data['Ks']
+        Ls = data['Ls']
+        xs = data['xs']
+        ys = data['ys']
+        zs = data['zs']
+        intensities = data['intensities']
+        sigmas = data['sigmas']
+        resolutions = data['resolutions']
+        Fcs = data['Fcs']
+        Fos = data['Fos']
+        Fos_scaled = data['Fos_scaled']
+        Fos_corrected = data['Fos_corrected']
+
+        material = data['material']
+        cif_file = data['cif_file']
+        output_prefix = data['output_prefix']
+        global_scale = data['global_scale']
+
+        spots = []
+        for idx in range(len(Hs)):
+            H = Hs[idx]
+            K = Ks[idx]
+            L = Ls[idx]
+            x = xs[idx]
+            y = ys[idx]
+            z = zs[idx]
+            intensity = intensities[idx]
+            sigma = sigmas[idx]
+            resolution = resolutions[idx]
+            Fc = Fcs[idx]
+            Fo = Fos[idx]
+            Fo_scaled = Fos_scaled[idx]
+            Fo_corrected = Fos_corrected[idx]
+
+            spot = Spot(H=H, K=K, L=L, intensity=intensity,
+                        sigma=sigma, x=x, y=y, z=z,
+                        resolution=resolution,
+                        Fc=Fc, Fo_corrected=Fo_corrected)
+            spot.Fo = Fo
+            spot.Fo_scaled = Fo_scaled
+
+            spots.append(spot)
+
+        slist = cls(spots, material=material, output_prefix=output_prefix)
+
+        slist.cif_file = cif_file
+        slist.global_scale = global_scale
+        slist.output_prefix = output_prefix
+
+        return slist
+
+    def to_npz(self, npz_file=None):
+
+        if not npz_file:
+            npz_file = f"{self.output_prefix}.npz"
+
+        Hs = []
+        Ks = []
+        Ls = []
+        xs = []
+        ys = []
+        zs = []
+        intensities = []
+        sigmas = []
+        resolutions = []
+        Fcs = []
+        Fos = []
+        Fos_scaled = []
+        Fos_corrected = []
+
+        for spot in self.spots:
+            Hs.append(spot.H)
+            Ks.append(spot.K)
+            Ls.append(spot.L)
+            xs.append(spot.x)
+            ys.append(spot.y)
+            zs.append(spot.z)
+            intensities.append(spot.intensity)
+            sigmas.append(spot.sigma)
+            resolutions.append(spot.resolution)
+            Fcs.append(spot.Fc)
+            Fos.append(spot.Fo)
+            Fos_scaled.append(spot.Fo_scaled)
+            Fos_corrected.append(spot.Fo_corrected)
+
+        print(f"Saving SpotsList into npz file: {npz_file}")
+        np.savez(npz_file, Hs=Hs, Ks=Ks, Ls=Ls, xs=xs, ys=ys, zs=zs,
+                 intensities=intensities, sigmas=sigmas,
+                 resolutions=resolutions, Fcs=Fcs, Fos=Fos,
+                 Fos_scaled=Fos_scaled, Fos_corrected=Fos_corrected,
+                 material=self.material,
+                 cif_file=self.cif_file,
+                 output_prefix=self.output_prefix,
+                 global_scale=self.global_scale)
 
     @classmethod
     def from_refl(cls,
@@ -76,10 +207,46 @@ class SpotsList:
             x, y, z = vals[i]
             intensity = intensities[i]
             sigma = sigmas[i]
-            spot = Spot(H, K, L, intensity, sigma=sigma, z=int(z))
+            spot = Spot(H, K, L, intensity, sigma=sigma, x=x, y=y, z=int(z))
             spots.append(spot)
 
         return cls(spots, material=material, output_prefix=output_prefix)
+
+    def group_by_image(self):
+
+        groups = {}
+
+        for spot in self.spots:
+
+            if spot.z in groups:
+                groups[spot.z].append(spot)
+            else:
+                groups[spot.z] = [spot]
+
+        self.groups = groups
+
+        return groups
+
+    def compute_R1_per_image(self, a='Fc', b='Fo'):
+
+        indices = []
+        image_scales = []
+        R1s = []
+
+        for key in self.groups.keys():
+            spots_list = self.groups[key]
+
+            image_scale, R1 = compute_R1_for_spots_list(spots_list,
+                                                        a=a, b=b)
+            indices.append(key)
+            image_scales.append(image_scale)
+            R1s.append(R1)
+
+        R1s = np.array(R1s)
+        image_scales = np.array(image_scales)
+        indices = np.array(indices)
+
+        return indices, R1s, image_scales
 
     @classmethod
     def from_hkl(cls,
@@ -107,7 +274,7 @@ class SpotsList:
             for spot in self.spots:
                 H, K, L = spot.miller
                 if spot.intensity > 0:
-                    intensity = (spot.Fo_corrected * self.scale)**2
+                    intensity = (spot.Fo_corrected * self.global_scale)**2
                 # else:
                 #     intensity = spot.intensity
                     sig = spot.sigma
@@ -130,7 +297,9 @@ class SpotsList:
         Fc = np.array(Fc)
 
         scale = Fo.mean() / Fc.mean()
-        self.scale = scale
+        self.global_scale = scale
+        self.average_Fo = Fo.mean()
+        self.median_Fo = np.median(Fo)
         print(f' Computed global scale: {scale:.2f}')
         print(' Scaling spots')
         for spot in self.spots:
@@ -139,14 +308,14 @@ class SpotsList:
             else:
                 spot.Fo_scaled = None
 
-    def compute_fc(self):
+    def compute_fc(self, nproc=20):
 
         params = []
         for spot in self.spots:
             params.append((self.cif_file, spot))
 
         print(' Computing the Fc')
-        with Pool(processes=20) as pool:
+        with Pool(processes=nproc) as pool:
             fcs = pool.map(sf_spot_multiprocess, params)
 
         for i in range(len(fcs)):
@@ -164,6 +333,9 @@ class SpotsList:
         true_fc = []
         pred_fc = []
 
+        scale, R1 = compute_R1_for_spots_list(self.spots,
+                                              a='Fc', b='Fo_corrected')
+
         for spot in self.spots:
             true_fc.append(spot.Fc)
             pred_fc.append(spot.Fo_corrected)
@@ -178,6 +350,18 @@ class SpotsList:
 
         ax.set_xlabel("True Fc")
         ax.set_ylabel("Predicted Fc")
+
+        print(f"R1 = {R1:.2f}")
+
+        r1_str = f"{R1:.2f}"
+        scale_str = f"{scale:.2f}"
+        r1_label = r'${\rm R}_1$ = '
+        s_label = r'${\rm s}$ = '
+
+        ax.text(0.05, 0.95, r1_label + r1_str,
+                va='top', ha='left', transform=ax.transAxes)
+        ax.text(0.05, 0.85, s_label + scale_str,
+                va='top', ha='left', transform=ax.transAxes)
 
         if not filename:
             filename = f"{self.output_prefix}_Fc_vs_Fpred.png"
@@ -195,6 +379,32 @@ def sf_multiprocess(params):
     cif_file, miller = params
     sf = StructureFactorCalculator(cif_file)
     return abs(sf.structure_factor(miller))
+
+
+def compute_R1_for_spots_list(spots_list, a='Fc', b='Fo'):
+
+    if len(spots_list) == 0:
+        return 0, 0
+
+    Fas = []
+    Fbs = []
+
+    for spot in spots_list:
+
+        Fa = getattr(spot, a)
+        Fb = getattr(spot, b)
+
+        if Fa is not None and Fb is not None:
+            if not np.isnan(Fa) and not np.isnan(Fb):
+                Fas.append(Fa)
+                Fbs.append(Fb)
+    Fas = np.array(Fas)
+    Fbs = np.array(Fbs)
+
+    image_scale = np.median(Fas / Fbs)
+    R1 = np.sum(np.abs(Fas - image_scale * Fbs)) / np.sum(Fas)
+
+    return image_scale, R1
 
 
 def double_exp(x, a, b, c, d):

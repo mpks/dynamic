@@ -130,18 +130,15 @@ class BulkFitter:
 
             if spot.intensity > 0:
                 if scale_correct > 0:
-                    spot.scale_correct = np.sqrt(scale_correct)
-                    spot.Fo_corrected = spot.Fo_scaled / spot.scale_correct
+                    spot.Fo_corrected = spot.Fo_scaled / np.sqrt(scale_correct)
                 else:
-                    spot.scale_correct = -1.0
                     spot.Fo_corrected = spot.Fo_scaled
             else:
                 if scale_correct < 0:
-                    spot.scale_correct = np.sqrt(-scale_correct)
+                    scorrect = np.sqrt(-scale_correct)
                     Fo_scaled = np.sqrt(-spot.intensity) / self.spots.scale
-                    spot.Fo_corrected = Fo_scaled / spot.scale_correct
+                    spot.Fo_corrected = Fo_scaled / scorrect
                 else:
-                    spot.scale_correct = -1.0
                     spot.Fo_corrected = None
 
     def plot_corrected(self):

@@ -2,7 +2,80 @@
 18 Dec 2025
 ===============
 
-Things done. 
- - One 
- - Two 
- - Three
+  :Attendees: M. Petrovic, D. McDonagh, D. Waterman, E. Krissinel
+  
+............
+ Results
+............
+ - Created this website to document progress. 
+ - Tried to process data from the original paper (:cite:`clabbers_2019`). 
+   There is a problem with rotation data (missing starting angle and
+   oscillation). Problem with reading CBF header.
+ - Created a global fitter function.
+ -  Model built using these parameters
+ - *Spot property*: H, K, L, intensity, sigma, resolution
+ - *Dataset property*: average :math:`{\rm F}_o`, median :math:`{\rm
+     Fo}`
+
+.. list-table::
+   :widths: 33 33 33
+   :align: center
+
+   * - .. image:: ../../figs/global_prediction_0001.png
+          :class: zoomable
+          :alt: First
+     - .. image:: ../../figs/global_prediction_0066.png
+          :class: zoomable
+          :alt: Second
+     - 
+
+   * - Global prediction on training dataset.
+     - Global prediction on new dataset
+     - 
+
+- Created a local fitter function. 
+  Model built using these parameters
+- *Spot property*: H, K, L, intensity, sigma, resolution
+- *Dataset property*: average :math:`{\rm F}_o`, median :math:`{\rm
+  Fo}`
+- *Neighbor property*: min neighbor intensity, max neighbor intensity,
+  90 percentile neighbor intensity, IQR neighbor intensity,
+  max neighbor resolution, min neighbor resolution, average neighbor
+  resolution, number of neighbors, average neighbor intensity, 
+   
+- Neighbors are computed in real space (pixel distance).
+
+.. list-table::
+   :widths: 33 33 33
+   :align: center
+
+   * - .. image:: ../../figs/local_prediction_0001.png
+          :class: zoomable
+          :alt: First
+     - .. image:: ../../figs/local_prediction_0065.png
+          :class: zoomable
+          :alt: Second
+     - 
+
+   * - Local prediction on training dataset.
+     - Local prediction on new dataset
+     - 
+
+- Comparing R1 factors (per image and for the whole dataset).
+
+.. list-table::
+   :widths: 33 33 33
+   :align: center
+
+   * - .. image:: ../../figs/local_vs_global.png
+          :class: zoomable
+          :alt: First
+     - .. image:: ../../figs/R1_per_image_0001.png
+          :class: zoomable
+          :alt: Second
+     - 
+
+   * - R1 across datasets.
+     - R1 per image.
+     - 
+
