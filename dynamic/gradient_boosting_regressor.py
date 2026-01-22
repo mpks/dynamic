@@ -93,7 +93,7 @@ class GlobalFitter:
         print(f"Training done in {(t2 - t1):.2f} sec")
         self.model = model
 
-    def save_model(self, filename=None):
+    def save_model(self, path=None, filename=None):
 
         if not filename:
             filename = f"{self.prefix}_"
@@ -102,11 +102,13 @@ class GlobalFitter:
             filename += f"depth_{self.max_depth:02d}_"
             filename += f"seed_{self.random_state:02d}_"
             filename += f"spots_{self.n_train_spots:06d}.joblib"
+        if path:
+            filename = path + '/' + filename
 
         print(f'Saving model in {filename}.')
         joblib.dump(self.model, filename)
 
-    def load_model(self, filename=None):
+    def load_model(self, path=None, filename=None):
 
         if not filename:
             filename = f"{self.prefix}_"
@@ -115,6 +117,9 @@ class GlobalFitter:
             filename += f"depth_{self.max_depth:02d}_"
             filename += f"seed_{self.random_state:02d}_"
             filename += f"spots_{self.n_train_spots:06d}.joblib"
+
+        if path:
+            filename = path + '/' + filename
 
         print(f'Loading model from {filename}.')
         self.model = joblib.load(filename)

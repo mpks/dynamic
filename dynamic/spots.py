@@ -7,6 +7,8 @@ from dynamic.io import read_dials_hkl
 from typing import List
 from dials.array_family import flex
 import matplotlib.pyplot as plt
+import gemmi
+from dynamic.excitation_error import ExcitationErrorCalculator
 
 
 class Spot:
@@ -53,6 +55,7 @@ class Spot:
         self.resolution = resolution
         self.Fc = Fc
         self.Fo = None
+        self.excitation_error = None
         self.Fo_scaled = None               # Fo scaled to the Fc scale
         self.Fo_corrected = Fo_corrected    # On the same scale as Fo
 
@@ -67,6 +70,8 @@ class SpotsList:
 
         if material == 'paracetamol':
             cif_file = '/home/marko/active/dd/data/our_paracetamol.cif'
+        elif material == 'ireloh':
+            cif_file = '/home/marko/active/dd/data/1870980_ireloh.cif'
         else:
             raise ValueError('Unknown material: ', material)
         self.material = material
@@ -76,6 +81,22 @@ class SpotsList:
         self.global_scale = 1.0
         self.average_Fo = None
         self.median_Fo = None
+
+    def compute_excitation_errors(self, expt_file, refl_file, exp_id=0):
+        """
+        Attach excitation error to each Spot using DIALS experiment geometry.
+        """
+
+        print("Computing excitation errors...")
+
+        ee_calc = ExcitationErrorCalculator(
+            experiments_json=expt_file,
+            exp_id=exp_id, refl_file=refl_file)
+
+        # ee_calc.attach_to_spots_list(self)
+        ee_calc.ee()
+
+        print("Excitation error computation finished.")
 
     @classmethod
     def from_npz(cls, npz_file):
@@ -177,6 +198,46 @@ class SpotsList:
                  cif_file=self.cif_file,
                  output_prefix=self.output_prefix,
                  global_scale=self.global_scale)
+
+    @classmethod
+    def from_mtz(cls,
+                 mtz_file: str,
+                 material: str = 'paracetamol',
+                 output_prefix: str = '0000',
+                 fitted_profile: bool = True):
+
+        mtz = gemmi.read_mtz_file(mtz_file)
+
+        # Extract Miller indices and data
+        H, K, L = (mtz.column_with_label('H').array,
+                   mtz.column_with_label('K').array,
+                   mtz.column_with_label('L').array)
+
+        # Suppose you want the merged intensity (I) and sigma(I)
+        intens = mtz.column_with_label('IMEAN').array
+        SIGI = mtz.column_with_label('SIGIMEAN').array
+
+#    obs = {}
+#    for i in range(len(intens)):
+#        hint = int(h[i])
+#        kint = int(k[i])
+#        lint = int(ll[i])
+#        obs[(hint, kint, lint)] = intens[i]
+#
+#    return obs
+
+        spots = []
+        for i in range(len(H)):
+
+            hh = H[i]
+            kk = K[i]
+            ll = L[i]
+            intensity = intens[i]
+            sigma = SIGI[i]
+            spot = Spot(hh, kk, ll, intensity, sigma=sigma, x=0, y=0, z=0)
+            spots.append(spot)
+
+        return cls(spots, material=material, output_prefix=output_prefix)
 
     @classmethod
     def from_refl(cls,

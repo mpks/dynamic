@@ -10,17 +10,18 @@ import dynamic
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-on_rtd = os.environ.get("READTHEDOCS") == "True"
+# on_rtd = os.environ.get("READTHEDOCS") == "True"
 
-if on_rtd:
-    autodoc_mock_imports = [
-        "dials",
-        "dials.array_family",
-        "cctbx",
-        "scitbx",
-        "iotbx",
-        "libtbx",
-    ]
+# if on_rtd:
+autodoc_mock_imports = [
+    "dials",
+    "dials.model",
+    "dials.array_family",
+    "cctbx",
+    "scitbx",
+    "iotbx",
+    "libtbx",
+]
 
 sys.path.insert(0, os.path.abspath('.'))
 project = 'Dynamic'

@@ -105,10 +105,10 @@ class BulkFitter:
 
         y_min = self.y_fit.min()
 
-        if y_min < -20:
-            ax.set_ylim(-20.0, 1.5)
-        else:
-            ax.set_ylim(y_min - 0.5, 1.5)
+#        if y_min < -20:
+#            ax.set_ylim(-20.0, 1.5)
+#        else:
+#            ax.set_ylim(y_min - 0.5, 1.5)
 
         ax.set_xlabel(r'Resolution ($\rm \AA$)')
         ax.set_ylabel(r'$\langle |\rm F_{\rm e}|^2 \rangle$')
@@ -136,7 +136,7 @@ class BulkFitter:
             else:
                 if scale_correct < 0:
                     scorrect = np.sqrt(-scale_correct)
-                    Fo_scaled = np.sqrt(-spot.intensity) / self.spots.scale
+                    Fo_scaled = np.sqrt(-spot.intensity) / self.spots.global_scale
                     spot.Fo_corrected = Fo_scaled / scorrect
                 else:
                     spot.Fo_corrected = None
@@ -192,10 +192,11 @@ class BulkFitter:
         fig_name = f"{self.spots.output_prefix}_corrected.png"
 
         ax1.set_xlim(0, 10)
-        ax2.set_xlim(0, 10)
+        ax1.set_xlim(0, 20)
 
-        ax1.set_ylim(0, 10)
-        ax2.set_ylim(0, 10)
+#        ax1.set_ylim(0, 10)
+        ax1.set_ylim(-1, 20)
+        ax2.set_ylim(-1, 20)
         plt.savefig(fig_name, dpi=400)
 
 

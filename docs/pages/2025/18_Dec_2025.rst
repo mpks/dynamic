@@ -11,10 +11,10 @@
  - Tried to process data from the original paper (:cite:`clabbers_2019`). 
    There is a problem with rotation data (missing starting angle and
    oscillation). Problem with reading CBF header.
- - Created a global fitter function.
- -  Model built using these parameters
- - *Spot property*: H, K, L, intensity, sigma, resolution
- - *Dataset property*: average :math:`{\rm F}_o`, median :math:`{\rm Fo}`
+ - Created a global fitter function. Model built using these parameters:
+
+   - **Spot property**: H, K, L, intensity, sigma, resolution
+   - **Dataset property**: average :math:`{\rm F}_o`, median :math:`{\rm Fo}`
 
 .. list-table::
    :widths: 33 33 33
@@ -32,14 +32,14 @@
      - Global prediction on new dataset
      - 
 
-- Created a local fitter function. 
-  Model built using these parameters
-- *Spot property*: H, K, L, intensity, sigma, resolution
-- *Dataset property*: average :math:`{\rm F}_o`, median :math:`{\rm Fo}`
-- *Neighbor property*: min neighbor intensity, max neighbor intensity,
-  90 percentile neighbor intensity, IQR neighbor intensity,
-  max neighbor resolution, min neighbor resolution, average neighbor
-  resolution, number of neighbors, average neighbor intensity, 
+- Created a local fitter function. Model built using these parameters
+
+  - **Spot property**: H, K, L, intensity, sigma, resolution
+  - **Dataset property**: average :math:`{\rm F}_o`, median :math:`{\rm Fo}`
+  - **Neighbor property**: min neighbor intensity, max neighbor intensity,
+    90 percentile neighbor intensity, IQR neighbor intensity,
+    max neighbor resolution, min neighbor resolution, average neighbor
+    resolution, number of neighbors, average neighbor intensity, 
    
 - Neighbors are computed in real space (pixel distance).
 
@@ -73,7 +73,21 @@
           :alt: Second
      - 
 
-   * - R1 across datasets.
-     - R1 per image.
+   * - :math:`R_1` across datasets.
+     - :math:`R_1` per image.
      - 
 
+............
+  Discussion
+............
+ 
+- In addition to :math:`R_1`, use maximum likelihood and entropy to assess 
+  the fit quality.
+- The GBT model should use spot coordinates in the inverse space (i.e.
+  :math:`k_x`, :math:`k_y`, :math:`k_z`) instead of Miller indices.
+- Use excitation error as a spot property.
+- Use distance on the Ewald sphere (instead of the real/detector space) to
+  determine nearest neighbors of a spot.
+- Another approach might be to train CNNs on images of spots on the Ewald
+  sphere. 
+- Vary the GBT model size to get a better fit.
