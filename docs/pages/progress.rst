@@ -21,6 +21,7 @@ Jan-2026
    :maxdepth: 1
 
    2026/15_Jan_2026.rst
+   2026/22_Jan_2026.rst
 
 .. Commented (How to make image grid)
     .. list-table::

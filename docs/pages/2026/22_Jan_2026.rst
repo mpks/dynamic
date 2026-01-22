@@ -1,0 +1,80 @@
+
+22 Jan 2026
+===============
+
+  :Attendees: M. Petrovic, D. McDonagh, D. Waterman, E. Krissinel
+  
+............
+ Results
+............
+
+ - David W. provided a fixed processing script for IRELOH. 
+ - To confirm that our processing pipeline is correct, we compare Fc vs Fo
+   plots generated from the original data (using DIALS) with the original Fc
+   vs Fo graph (processed with XDS). Figures 1 and 2 show these plots. In
+   general, we do not get exactly the same spots, but the number of spots and
+   the hyperbolic fit match with the original. The comparison of original
+   results vs our processing pipeline in Fig. 3 confirms that (within the
+   level of noise) our pipeline matches that of the XDS.
+ - Note on merging. The data in Figs 1-3 were obtained by processing with
+   DIALS + shelxt and then exporting the fcf files. We only get the match if
+   we either process with shelx (which does the merging) and then export the
+   hkl to fcf files, or we merge and then export to hkl. If we only scale the
+   data, but not merge it, and if we export it to hkl (without running
+   shelxt), we will get a lot of spots for the same Miller index, and they
+   won’t match the linear (hyperbolic) fit of the graphs in Figs 1 and 2.
+
+ .. list-table::
+   :widths: 33 33 33
+   :align: center
+
+   * - .. image:: ../../figs/ireloh_dials_vs_original.png
+          :class: zoomable
+          :alt: First
+     - .. image:: ../../figs/ireloh_dials_vs_original.png
+          :class: zoomable
+          :alt: Second
+     - .. image:: ../../figs/compare_by_miller.png
+          :class: zoomable
+          :alt: Third
+
+   * - Fig. 1: Comparison between IRELOH data processed with our DIALS
+       pipeline vs. the original data (from the paper). 
+     - Fig. 2: Same as Fig. 1, but zoomed. 
+     - Fig. 3: Comparing intensities and Fc for our pipeline (DIALS) versus
+       the original (XDS). 
+
+- Figure 4 suggests that the fit quality for the correction factor 
+  :math:`|\rm F_{\rm e}|` may be highly dependent on the resolution 
+  binning parameter.
+
+ .. list-table::
+   :widths: 33 33 33
+   :align: center
+
+   * - .. image:: ../../figs/IRELOH_bins.png
+          :class: zoomable
+          :alt: First
+     -
+     -
+
+   * - Fig. 4: Checking how resolution binning size determines the fit 
+       params for the structure factor correction :math:`\rm |F_{\rm e}|`. 
+       The :math:`\rm |F_{\rm e}|` was computed using the original data
+       (from supplementary information).
+     -
+     -
+
+- Implemented the excitation error in the Dynamic package. The excitation
+  error still needs to be implemented in the GBT model (as a spot parameter).
+
+............
+  Discussion
+............
+
+- Test how binning affects the :math:`|\rm F_{\rm e}|` fit and, thus, the 
+  quality of the structure solution. This will assess whether the bulk
+  correction is robust. 
+- Make plots that compare the spot excitation error vs deviation from the 
+  kinematic approximation (the magnitude of dynamical diffraction correction). 
+  Do this for the Paracetamol data on an image-by-image basis.  
