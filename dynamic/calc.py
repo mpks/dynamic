@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.optimize import curve_fit
+from scipy.optimize import minimize_scalar
 
 
 def hypo(x, c, a):
@@ -56,3 +57,26 @@ def fit_hypo(fc, fobs):
         return a * np.sqrt(x*x + c)
 
     return a_fit, hyperbola
+
+
+def find_best_scale(Fo, Fc):
+    """Find scaling factor that minimizes R1 between Fo and Fc"""
+    Fo = np.asarray(Fo)
+    Fc = np.asarray(Fc)
+
+    up_bound = 5 * Fo.mean() / Fc.mean()
+
+    # Reasonable search range for scale
+    result = minimize_scalar(r1_factor, bounds=(0, up_bound),
+                             args=(Fo, Fc), method='bounded')
+
+    k_best = result.x
+    r1_best = result.fun
+    print(f"R1 scaling - R1 = {r1_best:.3f}  scale = {k_best:.3f}")
+    return k_best, r1_best
+
+
+def r1_factor(k, Fo, Fc):
+    down = np.sum(np.abs(Fo))
+    up = np.abs(Fo) - k * np.abs(Fc)
+    return np.sum(np.abs(up)) / down

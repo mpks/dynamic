@@ -9,6 +9,8 @@ from dials.array_family import flex
 import matplotlib.pyplot as plt
 import gemmi
 from dynamic.excitation_error import ExcitationErrorCalculator
+from dynamic.calc import find_best_scale
+from dxtbx.model.experiment_list import ExperimentListFactory
 
 
 class Spot:
@@ -24,7 +26,8 @@ class Spot:
                  z: int = None,
                  resolution: float = None,
                  Fc: float = None,
-                 Fo_corrected: float = None
+                 Fo_corrected: float = None,
+                 excitation_error: float = None
                  ) -> None:
 
         """
@@ -55,9 +58,13 @@ class Spot:
         self.resolution = resolution
         self.Fc = Fc
         self.Fo = None
-        self.excitation_error = None
+        self.excitation_error = excitation_error
         self.Fo_scaled = None               # Fo scaled to the Fc scale
         self.Fo_corrected = Fo_corrected    # On the same scale as Fo
+
+    def is_miller(self, H, K, L):
+
+        return (H == self.H) and (K == self.K) and (L == self.L)
 
 
 class SpotsList:
@@ -82,7 +89,12 @@ class SpotsList:
         self.average_Fo = None
         self.median_Fo = None
 
-    def compute_excitation_errors(self, expt_file, refl_file, exp_id=0):
+    def __len__(self):
+        return len(self.spots)
+
+    def compute_excitation_errors(self, expt_file, refl_file,
+                                  out_path, set_idx, exp_id=0,
+                                  plot=True):
         """
         Attach excitation error to each Spot using DIALS experiment geometry.
         """
@@ -93,8 +105,10 @@ class SpotsList:
             experiments_json=expt_file,
             exp_id=exp_id, refl_file=refl_file)
 
-        # ee_calc.attach_to_spots_list(self)
         ee_calc.ee()
+        ee_calc.attach_to_spots_list(self)
+        if plot:
+            ee_calc.plot_ee_per_image(self, out_path, set_idx)
 
         print("Excitation error computation finished.")
 
@@ -121,6 +135,7 @@ class SpotsList:
         cif_file = data['cif_file']
         output_prefix = data['output_prefix']
         global_scale = data['global_scale']
+        excitation_errors = data['excitation_errors']
 
         spots = []
         for idx in range(len(Hs)):
@@ -133,6 +148,8 @@ class SpotsList:
             intensity = intensities[idx]
             sigma = sigmas[idx]
             resolution = resolutions[idx]
+            excitation_error = excitation_errors[idx]
+
             Fc = Fcs[idx]
             Fo = Fos[idx]
             Fo_scaled = Fos_scaled[idx]
@@ -141,7 +158,8 @@ class SpotsList:
             spot = Spot(H=H, K=K, L=L, intensity=intensity,
                         sigma=sigma, x=x, y=y, z=z,
                         resolution=resolution,
-                        Fc=Fc, Fo_corrected=Fo_corrected)
+                        Fc=Fc, Fo_corrected=Fo_corrected,
+                        excitation_error=excitation_error)
             spot.Fo = Fo
             spot.Fo_scaled = Fo_scaled
 
@@ -173,6 +191,7 @@ class SpotsList:
         Fos = []
         Fos_scaled = []
         Fos_corrected = []
+        excitation_errors = []
 
         for spot in self.spots:
             Hs.append(spot.H)
@@ -188,6 +207,7 @@ class SpotsList:
             Fos.append(spot.Fo)
             Fos_scaled.append(spot.Fo_scaled)
             Fos_corrected.append(spot.Fo_corrected)
+            excitation_errors.append(spot.excitation_error)
 
         print(f"Saving SpotsList into npz file: {npz_file}")
         np.savez(npz_file, Hs=Hs, Ks=Ks, Ls=Ls, xs=xs, ys=ys, zs=zs,
@@ -197,6 +217,7 @@ class SpotsList:
                  material=self.material,
                  cif_file=self.cif_file,
                  output_prefix=self.output_prefix,
+                 excitation_errors=excitation_errors,
                  global_scale=self.global_scale)
 
     @classmethod
@@ -242,14 +263,22 @@ class SpotsList:
     @classmethod
     def from_refl(cls,
                   refl_file: str,
+                  expt_file: str,
                   material: str = 'paracetamol',
                   output_prefix: str = '0000',
-                  fitted_profile: bool = True):
+                  fitted_profile: bool = True,
+                  ):
 
         refl = flex.reflection_table.from_file(refl_file)
 
         spots = []
 
+        expt = ExperimentListFactory.from_json_file(expt_file,
+                                                    check_format=False)
+
+        A = np.array(expt[0].crystal.get_A())   # 3x3 matrix, Å^-1
+        print("DIALS cell", expt[0].crystal.get_unit_cell())
+        A = np.reshape(A, (3, 3))
         hkl_flex = refl["miller_index"]
         hkl_list = [hkl_flex[i] for i in range(len(hkl_flex))]
 
@@ -266,6 +295,9 @@ class SpotsList:
 
             H, K, L = hkl_list[i]
             x, y, z = vals[i]
+            # rlp = np.array([H, K, L]) @ A.T
+            # d = np.linalg.norm(rlp)
+
             intensity = intensities[i]
             sigma = sigmas[i]
             spot = Spot(H, K, L, intensity, sigma=sigma, x=x, y=y, z=int(z))
@@ -343,6 +375,15 @@ class SpotsList:
                     line += f"{sig:10.4f}\n"
                     f.write(line)
 
+    def is_miller_in(self, miller_index):
+
+        H, K, L = miller_index
+
+        for spot in self.spots:
+            if spot.is_miller(H, K, L):
+                return True
+        return False
+
     def compute_Fo_and_bulk_scale(self):
 
         Fo = []
@@ -354,15 +395,22 @@ class SpotsList:
                 Fo.append(fo)
                 Fc.append(spot.Fc)
 
+        n_start = len(self.spots)
+        n_end = len(Fo)
+        print(f"Using {n_end} / {n_start} positive spots for scaling")
+
         Fo = np.array(Fo)
         Fc = np.array(Fc)
 
-        scale = Fo.mean() / Fc.mean()
+        scale, r1_best = find_best_scale(Fo, Fc)
+
+        # scale = Fo.mean() / Fc.mean()
         self.global_scale = scale
         self.average_Fo = Fo.mean()
         self.median_Fo = np.median(Fo)
         print(f' Computed global scale: {scale:.2f}')
         print(' Scaling spots')
+
         for spot in self.spots:
             if spot.intensity > 0:
                 spot.Fo_scaled = spot.Fo / scale
@@ -388,6 +436,7 @@ class SpotsList:
 
         for spot in self.spots:
             spot.resolution = resolution_func(spot.miller)
+            # print("COMPUTED", spot.miller, spot.resolution)
 
     def plot_fc_vs_predicted(self, filename=None):
 

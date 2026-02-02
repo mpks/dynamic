@@ -24,6 +24,7 @@ def get_resolution_calculator(cif_file):
                         get_val("_cell_angle_gamma")
                         )
 
+    print("CIF cell", uc)
     d = uc.calculate_d
 
     return d
