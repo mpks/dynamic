@@ -10,8 +10,10 @@ import matplotlib.pyplot as plt
 import gemmi
 from dynamic.excitation_error import ExcitationErrorCalculator
 from dynamic.calc import find_best_scale
+from dynamic.calc import s1_distance
 from dxtbx.model.experiment_list import ExperimentListFactory
-
+from dynamic.calc import compute_s1
+import copy
 
 class Spot:
 
@@ -27,7 +29,10 @@ class Spot:
                  resolution: float = None,
                  Fc: float = None,
                  Fo_corrected: float = None,
-                 excitation_error: float = None
+                 excitation_error: float = None,
+                 s1_x: float = None,
+                 s1_y: float = None,
+                 s1_z: float = None
                  ) -> None:
 
         """
@@ -43,7 +48,6 @@ class Spot:
         L : integer
             Miller index L.
 
-
         """
 
         self.H = H
@@ -52,6 +56,9 @@ class Spot:
         self.x = x
         self.y = y
         self.z = z
+        self.s1_x = s1_z
+        self.s1_y = s1_y
+        self.s1_z = s1_z
         self.miller = (H, K, L)
         self.intensity = intensity
         self.sigma = sigma
@@ -62,9 +69,19 @@ class Spot:
         self.Fo_scaled = None               # Fo scaled to the Fc scale
         self.Fo_corrected = Fo_corrected    # On the same scale as Fo
 
+    def __str__(self):
+
+        spot_str = f"({self.H:+3d}, {self.K:+3d}, {self.L:+3d})"
+        spot_str += f" I = {self.intensity:>8.2f}, z = {self.z:04d}"
+        return spot_str
+
     def is_miller(self, H, K, L):
 
         return (H == self.H) and (K == self.K) and (L == self.L)
+
+    def s1_distance(self, spot):
+
+        return s1_distance(self, spot)
 
 
 class SpotsList:
@@ -92,6 +109,15 @@ class SpotsList:
     def __len__(self):
         return len(self.spots)
 
+    def __iter__(self):
+        return iter(self.spots)
+
+    def __getitem__(self, index):
+        return self.spots[index]
+
+    def __setitem__(self, index, value):
+        self.spots[index] = value
+
     def compute_excitation_errors(self, expt_file, refl_file,
                                   out_path, set_idx, exp_id=0,
                                   plot=True):
@@ -112,6 +138,15 @@ class SpotsList:
 
         print("Excitation error computation finished.")
 
+    def get_by_miller(self, miller_index):
+
+        spots = []
+        for spot in self:
+            if spot.is_miller(miller_index):
+                spots.append(spot)
+
+        return spots
+
     @classmethod
     def from_npz(cls, npz_file):
 
@@ -123,6 +158,9 @@ class SpotsList:
         xs = data['xs']
         ys = data['ys']
         zs = data['zs']
+        s1_xs = data['s1_xs']
+        s1_ys = data['s1_ys']
+        s1_zs = data['s1_zs']
         intensities = data['intensities']
         sigmas = data['sigmas']
         resolutions = data['resolutions']
@@ -145,6 +183,9 @@ class SpotsList:
             x = xs[idx]
             y = ys[idx]
             z = zs[idx]
+            s1_x = s1_xs[idx]
+            s1_y = s1_ys[idx]
+            s1_z = s1_zs[idx]
             intensity = intensities[idx]
             sigma = sigmas[idx]
             resolution = resolutions[idx]
@@ -157,6 +198,7 @@ class SpotsList:
 
             spot = Spot(H=H, K=K, L=L, intensity=intensity,
                         sigma=sigma, x=x, y=y, z=z,
+                        s1_x=s1_x, s1_y=s1_y, s1_z=s1_z,
                         resolution=resolution,
                         Fc=Fc, Fo_corrected=Fo_corrected,
                         excitation_error=excitation_error)
@@ -184,6 +226,9 @@ class SpotsList:
         xs = []
         ys = []
         zs = []
+        s1_xs = []
+        s1_ys = []
+        s1_zs = []
         intensities = []
         sigmas = []
         resolutions = []
@@ -200,6 +245,9 @@ class SpotsList:
             xs.append(spot.x)
             ys.append(spot.y)
             zs.append(spot.z)
+            s1_xs.append(spot.s1_x)
+            s1_ys.append(spot.s1_y)
+            s1_zs.append(spot.s1_z)
             intensities.append(spot.intensity)
             sigmas.append(spot.sigma)
             resolutions.append(spot.resolution)
@@ -211,6 +259,7 @@ class SpotsList:
 
         print(f"Saving SpotsList into npz file: {npz_file}")
         np.savez(npz_file, Hs=Hs, Ks=Ks, Ls=Ls, xs=xs, ys=ys, zs=zs,
+                 s1_xs=s1_xs, s1_ys=s1_ys, s1_zs=s1_zs,
                  intensities=intensities, sigmas=sigmas,
                  resolutions=resolutions, Fcs=Fcs, Fos=Fos,
                  Fos_scaled=Fos_scaled, Fos_corrected=Fos_corrected,
@@ -297,10 +346,12 @@ class SpotsList:
             x, y, z = vals[i]
             # rlp = np.array([H, K, L]) @ A.T
             # d = np.linalg.norm(rlp)
+            s1_x, s1_y, s1_z = compute_s1(x, y, expt)
 
             intensity = intensities[i]
             sigma = sigmas[i]
-            spot = Spot(H, K, L, intensity, sigma=sigma, x=x, y=y, z=int(z))
+            spot = Spot(H, K, L, intensity, sigma=sigma, x=x, y=y, z=int(z),
+                        s1_x=s1_x, s1_y=s1_y, s1_z=s1_z)
             spots.append(spot)
 
         return cls(spots, material=material, output_prefix=output_prefix)

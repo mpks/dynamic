@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.optimize import curve_fit
 from scipy.optimize import minimize_scalar
+from scitbx.array_family import flex
 
 
 def hypo(x, c, a):
@@ -80,3 +81,32 @@ def r1_factor(k, Fo, Fc):
     down = np.sum(np.abs(Fo))
     up = np.abs(Fo) - k * np.abs(Fc)
     return np.sum(np.abs(up)) / down
+
+
+def s1_distance(spot_a, spot_b):
+
+    # The spots need to be at the same, or at least at the neigboring images
+
+    assert abs(spot_a.z - spot_b.z) <= 1
+
+    dx = (spot_a.s1_x - spot_b.s1_x)**2
+    dy = (spot_a.s1_y - spot_b.s1_y)**2
+    dz = (spot_a.s1_z - spot_b.s1_z)**2
+
+    return np.sqrt(dx + dy + dz)
+
+
+def compute_s1(x, y, experiment):
+    """Set observed s1 vectors for reflections if required, return the number
+    of reflections that have been set."""
+
+    detector = experiment.detectors()[0]
+    panel = detector[0]
+    beam = experiment.beams()[0]
+    xy = flex.vec2_double(flex.double([x]), flex.double([y]))
+    s1 = panel.get_lab_coord(xy)
+    s1 = s1 / s1.norms() * (1 / beam.get_wavelength())
+
+    s1 = np.array(s1)
+
+    return s1[0]
