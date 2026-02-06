@@ -13,7 +13,7 @@ from dynamic.calc import find_best_scale
 from dynamic.calc import s1_distance
 from dxtbx.model.experiment_list import ExperimentListFactory
 from dynamic.calc import compute_s1
-import copy
+
 
 class Spot:
 
@@ -75,7 +75,17 @@ class Spot:
         spot_str += f" I = {self.intensity:>8.2f}, z = {self.z:04d}"
         return spot_str
 
-    def is_miller(self, H, K, L):
+    def is_miller(self, *args):
+
+        if len(args) == 1:
+            try:
+                H, K, L = args[0]
+            except (TypeError, ValueError):
+                raise TypeError('Expected a tuple (H, K, L)')
+        elif len(args) == 3:
+            H, K, L = args
+        else:
+            raise TypeError("Expected either three params H, K, L or 3-tuple")
 
         return (H == self.H) and (K == self.K) and (L == self.L)
 
@@ -356,20 +366,80 @@ class SpotsList:
 
         return cls(spots, material=material, output_prefix=output_prefix)
 
+    def get_ys(self, filter_positive=True):
+
+        ys = []
+        for spot in self:
+            if spot.intensity > 0:
+                ys.append(spot.y)
+
+        ys = np.array(ys)
+        return ys
+
+    def get_xs(self, filter_positive=True):
+
+        xs = []
+        for spot in self:
+            if spot.intensity > 0:
+                xs.append(spot.x)
+
+        xs = np.array(xs)
+        return xs
+
+    def get_fcs(self, filter_positive=True):
+
+        Fcs = []
+        for spot in self:
+            if spot.intensity > 0:
+                Fcs.append(spot.Fc)
+
+        Fcs = np.array(Fcs)
+        return Fcs
+
+    def get_iobs(self, filter_positive=True):
+
+        iobs = []
+        for spot in self:
+            if spot.intensity > 0:
+                iobs.append(spot.intensity)
+
+        iobs = np.array(iobs)
+        return iobs
+
+    def filter_by_miller(self, miller_index):
+
+        filtered = []
+        for spot in self:
+            if spot.is_miller(miller_index):
+                filtered.append(spot)
+
+        filtered = SpotsList(filtered, material=self.material,
+                             output_prefix='filtered')
+        return filtered
+
     def group_by_image(self):
 
         groups = {}
 
-        for spot in self.spots:
+        for spot in self:
 
             if spot.z in groups:
                 groups[spot.z].append(spot)
             else:
                 groups[spot.z] = [spot]
 
-        self.groups = groups
+        # Turn each group into an individual SpotsList
+        new_groups = {}
+        for key in groups:
+            temp_spots = groups[key]
+            prefix_name = f"{self.output_prefix}" + f'_group_{key:04d}'
+            new_spots = SpotsList(temp_spots, material=self.material,
+                                  output_prefix=prefix_name)
+            new_groups[key] = new_spots
 
-        return groups
+        self.groups = new_groups
+
+        return new_groups
 
     def compute_R1_per_image(self, a='Fc', b='Fo'):
 
