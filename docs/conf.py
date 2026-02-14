@@ -17,6 +17,7 @@ autodoc_mock_imports = [
     "dials",
     "dials.model",
     "dials.array_family",
+    "dxtbx",
     "cctbx",
     "scitbx",
     "iotbx",

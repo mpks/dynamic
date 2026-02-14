@@ -24,6 +24,15 @@ Jan-2026
    2026/22_Jan_2026.rst
    2026/29_Jan_2026.rst
 
+---------------------------------
+Feb-2026
+---------------------------------
+
+.. toctree::
+   :maxdepth: 1
+
+   2026/05_Feb_2026.rst
+
 .. Commented (How to make image grid)
     .. list-table::
        :widths: 33 33 33

@@ -201,7 +201,8 @@ class LocalFitter(GlobalFitter):
                               spot.intensity, spot.sigma,
                               spot.resolution, dataset.average_Fo,
                               dataset.median_Fo, en.n_spots, en.i_max,
-                              en.i_min, en.i_mean, en.i_90, en.iqr, en.max_res,
+                              en.i_min, en.i_mean, en.i_90, en.iqr,
+                              en.max_res,
                               en.min_res, en.mean_res, en.n_neighbor,
                               en.nn_avg_intensity, en.nn_max_intensity,
                               en.nn_rel_intensity])

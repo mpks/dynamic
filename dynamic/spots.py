@@ -326,18 +326,19 @@ class SpotsList:
                   material: str = 'paracetamol',
                   output_prefix: str = '0000',
                   fitted_profile: bool = True,
+                  exp_id: int = None,
+                  scale: bool = False,
                   ):
 
         refl = flex.reflection_table.from_file(refl_file)
+
+        if exp_id:
+            refl = refl.select(refl['id'] == exp_id)
 
         spots = []
 
         expt = ExperimentListFactory.from_json_file(expt_file,
                                                     check_format=False)
-
-        A = np.array(expt[0].crystal.get_A())   # 3x3 matrix, Å^-1
-        print("DIALS cell", expt[0].crystal.get_unit_cell())
-        A = np.reshape(A, (3, 3))
         hkl_flex = refl["miller_index"]
         hkl_list = [hkl_flex[i] for i in range(len(hkl_flex))]
 
@@ -348,14 +349,17 @@ class SpotsList:
             intensities = list(refl["intensity.sum.value"])
             sigmas = list(refl["intensity.sum.variance"])
 
+        if scale:
+            intensities = np.array(refl["intensity.scale.value"])
+            # scales = np.array(refl["inverse_scale_factor"])
+            # intensities = intensities / scales
+
         vals = list(refl["xyzobs.px.value"])       # list of floats
 
         for i in range(len(hkl_list)):
 
             H, K, L = hkl_list[i]
             x, y, z = vals[i]
-            # rlp = np.array([H, K, L]) @ A.T
-            # d = np.linalg.norm(rlp)
             s1_x, s1_y, s1_z = compute_s1(x, y, expt)
 
             intensity = intensities[i]

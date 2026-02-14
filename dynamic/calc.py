@@ -60,8 +60,34 @@ def fit_hypo(fc, fobs):
     return a_fit, hyperbola
 
 
+def scale_intensities(I1, I2, keep_first=True):
+
+    I1 = np.array(I1)
+    I2 = np.array(I2)
+
+    I1[I1 < 0] = 0
+    I2[I2 < 0] = 0
+
+    F1 = np.sqrt(I1)
+    F2 = np.sqrt(I2)
+
+    if keep_first:
+        scale, r1 = find_best_scale(F1, F2)
+        F2 = scale * F2
+        I2 = F2**2
+    else:
+        scale, r1 = find_best_scale(F2, F1)
+        F1 = scale * F1
+        I1 = F1**2
+
+    return I1, I2
+
+
 def find_best_scale(Fo, Fc):
-    """Find scaling factor that minimizes R1 between Fo and Fc"""
+    """
+    Find scaling factor that minimizes R1 between Fo and Fc
+    (finds best k for which Fo is approx Fc * k)
+    """
     Fo = np.asarray(Fo)
     Fc = np.asarray(Fc)
 
