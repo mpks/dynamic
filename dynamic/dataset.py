@@ -15,8 +15,6 @@ class Dataset:
         self.images = images              # List of image objects
         self.exps = ExpList.from_json_file(expt_file, check_format=False)
         self.refs = flex.reflection_table.from_file(refl_file)
-        print("Number of exps", len(self.exps))
-        # self.exps = flatten_experiments(exps)
 
     def compare_by_miller(self, threshold=50):
 
@@ -53,12 +51,8 @@ class Dataset:
                         count = count_millers(spots_1, spots_2)
 
                         if count >= threshold:
-                            # vec1 = all_vecs[i][ii1]
-                            # vec2 = all_vecs[j][ii2]
                             ostr = f"{i:04d}  {j:04d}  {ind1} {ind2}"
                             ostr += f"  count: {count}"
-#                            ostr += f"vec1: {vec1}\n"
-#                            ostr += f"vec2: {vec2}\n"
                             if print_banner:
                                 print(bstr)
                                 print_banner = False
@@ -145,7 +139,7 @@ class Dataset:
         orientation_vecs = []
         all_vecs = []
         for exp_id in range(n_exp):
-            vects = self.extract_unit_cell_orientations(exp_id)
+            vects, _ = self.extract_unit_cell_orientations(exp_id)
             all_vecs.append(vects)
             for ivec, vec in enumerate(vects):
                 a, b, c = vec
@@ -253,12 +247,31 @@ class Dataset:
         UB_frames = [U * B for U, B in zip(U_frames, B_frames)]
 
         frac_mats = [m.transpose() for m in UB_frames]
+
+        # Calculate zone axes, which also requires the beam directions
+        # at the framecentres
+        us0_frames = []
+        for d1, d2 in pairwise(us0):
+            us0_frames.append(((d1 + d2) / 2).normalize())
+
+        scale = 1   # I added this line (see original func for more detail)
+        uc = exp.crystal.get_unit_cell()
+        scale = max(uc.parameters()[0:3])
+
+        zone_axes = [frac * (d * scale) for frac, d in
+                     zip(frac_mats, us0_frames)]
+
         orthog_mats = (frac.inverse() for frac in frac_mats)
         h = matrix.col((1, 0, 0))
         k = matrix.col((0, 1, 0))
         l = matrix.col((0, 0, 1))      # noqa: E741
         real_space_axes = [(o * h, o * k, o * l) for o in orthog_mats]
-        return real_space_axes
+
+        # Vectors in the crystal frame
+        Os = [b.transpose().inverse() for b in B_frames]
+        initial_orient = [(o * h, o * k, o * l) for o in Os]
+
+        return real_space_axes, zone_axes, initial_orient
 
 
 def pairwise(iterable):
