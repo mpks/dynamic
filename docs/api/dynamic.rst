@@ -9,6 +9,22 @@ dynamic package
 Submodules
 ----------
 
+dynamic.angles module
+---------------------
+
+.. automodule:: dynamic.angles
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+dynamic.bloch module
+--------------------
+
+.. automodule:: dynamic.bloch
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 dynamic.bulk\_correction module
 -------------------------------
 
@@ -25,10 +41,42 @@ dynamic.calc module
    :undoc-members:
    :show-inheritance:
 
+dynamic.dataset module
+----------------------
+
+.. automodule:: dynamic.dataset
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+dynamic.ee\_gbr module
+----------------------
+
+.. automodule:: dynamic.ee_gbr
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+dynamic.excitation\_error module
+--------------------------------
+
+.. automodule:: dynamic.excitation_error
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 dynamic.gradient\_boosting\_regressor module
 --------------------------------------------
 
 .. automodule:: dynamic.gradient_boosting_regressor
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+dynamic.image module
+--------------------
+
+.. automodule:: dynamic.image
    :members:
    :undoc-members:
    :show-inheritance:
@@ -45,6 +93,14 @@ dynamic.kinematic module
 ------------------------
 
 .. automodule:: dynamic.kinematic
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+dynamic.multislice module
+-------------------------
+
+.. automodule:: dynamic.multislice
    :members:
    :undoc-members:
    :show-inheritance:
