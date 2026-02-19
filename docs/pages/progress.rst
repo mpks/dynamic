@@ -32,6 +32,7 @@ Feb-2026
    :maxdepth: 1
 
    2026/05_Feb_2026.rst
+   2026/12_Feb_2026.rst
 
 .. Commented (How to make image grid)
     .. list-table::

@@ -60,7 +60,7 @@ def fit_hypo(fc, fobs):
     return a_fit, hyperbola
 
 
-def scale_intensities(I1, I2, keep_first=True):
+def scale_intensities(I1, I2, keep_first=True, return_r1=False):
 
     I1 = np.array(I1)
     I2 = np.array(I2)
@@ -80,7 +80,10 @@ def scale_intensities(I1, I2, keep_first=True):
         F1 = scale * F1
         I1 = F1**2
 
-    return I1, I2
+    if return_r1:
+        return I1, I2, r1
+    else:
+        return I1, I2
 
 
 def find_best_scale(Fo, Fc):
