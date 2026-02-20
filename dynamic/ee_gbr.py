@@ -1,14 +1,13 @@
 #!/home/marko/stfc/dials_build/conda_base/bin/python3
 from dynamic.spots import SpotsList
 from sklearn.ensemble import GradientBoostingRegressor
-from sklearn.model_selection import cross_val_score
-from scipy.stats import pearsonr
+from dynamic.gradient_boosting_regressor import GlobalFitter
 from typing import List
 import numpy as np
 import time
-import joblib
 
 """Gradient Boosting Regressor, but with excitation error included"""
+
 
 class LocalFitter(GlobalFitter):
 

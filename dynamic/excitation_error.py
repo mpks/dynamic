@@ -10,16 +10,16 @@ import numpy as np
 
 
 class ExcitationErrorCalculator:
-    """
-    Computes excitation error for DIALS reflections or custom Spot objects.
-    Uses the same definition as DIALS/PETS:
-        r = UB * hkl
-        s1 = r + s0
-        excitation_error = |s0| - |s1|
-    """
 
     def __init__(self, experiments_json: str, exp_id: int = 0,
                  refl_file=None):
+        """
+        Computes excitation error for DIALS reflections or custom Spot
+        objects. Uses the same definition as DIALS/PETS:
+            r = UB * hkl
+            s1 = r + s0
+            excitation_error = |s0| - |s1|
+        """
 
         self.reflections = flex.reflection_table.from_file(refl_file)
         experiments = ExperimentListFactory.from_json_file(experiments_json)

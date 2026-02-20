@@ -8,6 +8,8 @@
  Results
 ............
 
+
+
  - Compared the spot excitation error with how much a spot is enhanced or
    suppressed (Figs. 1 and 2). In general, there is no one-to-one correlation
    between the excitation error and the dynamical effects. This is probably
@@ -18,7 +20,25 @@
    (Fig. 3), it looks as though spots on individual images might behave
    differently than their mean (merged) intensities. For example, the spot
    whose merge intensity is suppressed (as compared to Fc) might be boosted on
-   an individual image.
+   an individual image. 
+
+ .. |red| raw:: html
+
+   <span style="color: red">
+
+.. |blue| raw:: html
+
+   <span style="color: blue">
+
+.. |end| raw:: html
+
+   </span>
+   
+- |red| NOTE: We later discovered (see 12 Feb 2026) 
+  that the spread in Fig. 3 was from unscaled data. These data are kept in
+  the scaled file, but they correspond to integrated data. The spread
+  is still present, but is narrower after scaling. |end|
+
 
  .. list-table::
    :widths: 33 33 33
