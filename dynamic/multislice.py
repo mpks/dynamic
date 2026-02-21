@@ -11,7 +11,9 @@ numba.set_num_threads(2)
 
 def make_system(cif_file, angles_file, thickness_nm=1, size_xy_nm=None,
                 shape='cylinder', uncut_block_size=(50, 50, 50),
-                image_index=1, show=False):
+                image_index=1, show=False,
+                sampling=0.05, slice_thickness=1.0, gpts=512,
+                extent=100):
 
     abtem.config.set({"mkl.threads": 10})
     abtem.config.set({"fftw.threads": 10})
@@ -101,12 +103,12 @@ def make_system(cif_file, angles_file, thickness_nm=1, size_xy_nm=None,
 
     print("Atoms in sphere:", len(repeated_tpb))
 
-    potential = abtem.Potential(repeated_tpb, sampling=0.05,
+    potential = abtem.Potential(repeated_tpb, sampling=sampling,
                                 parametrization="lobato",
-                                slice_thickness=1.0,
+                                slice_thickness=slice_thickness,
                                 projection="finite")
 
-    plane_wave = abtem.PlaneWave(gpts=512, extent=100, energy=200e3)
+    plane_wave = abtem.PlaneWave(gpts=gpts, extent=extent, energy=200e3)
     waves = plane_wave.build()
     waves.compute()
 

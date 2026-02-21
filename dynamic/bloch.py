@@ -10,7 +10,7 @@ numba.set_num_threads(2)
 
 
 def make_system_bloch(cif_file, angles_file, thickness_nm=1, image_index=0,
-                      show=False):
+                      show=False, k_max=5, output_path=None, sg_max=0.1):
 
     abtem.config.set({"mkl.threads": 10})
     abtem.config.set({"fftw.threads": 10})
@@ -18,6 +18,7 @@ def make_system_bloch(cif_file, angles_file, thickness_nm=1, image_index=0,
     data = np.load(angles_file)
 
     angles = data['angles']
+
     if len(angles) <= image_index:
         return False
 
@@ -50,7 +51,6 @@ def make_system_bloch(cif_file, angles_file, thickness_nm=1, image_index=0,
 
     # Create structure factor first
     # k_max = 12  # controls accuracy
-    k_max = 5  # controls accuracy
     structure_factor = StructureFactor(
         tpb,
         k_max=k_max,
@@ -58,7 +58,7 @@ def make_system_bloch(cif_file, angles_file, thickness_nm=1, image_index=0,
     )
 
     # Create Bloch waves from structure factor
-    sg_max = 0.1  # maximum scattering angle
+    sg_max = sg_max  # maximum scattering angle
     bloch_waves = BlochWaves(
         structure_factor=structure_factor,
         energy=200e3,
@@ -76,7 +76,7 @@ def make_system_bloch(cif_file, angles_file, thickness_nm=1, image_index=0,
     print("Computing diffraction patterns")
     dif_patterns = dif_patterns.compute()
 
-    out_str = f"{image_index:03d}_z_{thickness_nm:05.1f}_nm_"
+    out_str = f"{image_index:04d}_z_{thickness_nm:05.1f}_nm_"
     out_str += f"kmax_{k_max:03d}"
 
     # Get the first (only) thickness
@@ -89,16 +89,21 @@ def make_system_bloch(cif_file, angles_file, thickness_nm=1, image_index=0,
     all_miller = spots.miller_indices
     intensities = np.array(spots.intensities)
 
-    plot_spots(all_pos, all_miller, intensities, out_str)
+    plot_spots(all_pos, all_miller, intensities, out_str,
+               out_path=output_path)
 
     # Save spots
     df = spots.to_dataframe()
-    save_as_npz(df, f"spots_bloch_{out_str}.npz")
+    out_file = f"spots_bloch_{out_str}.npz"
+    if output_path is not None:
+        out_file = output_path + "/" + out_file
+    save_as_npz(df, out_file)
 
     return True
 
 
-def plot_spots(all_pos, all_miller, intensities, out_str, top_spots=60):
+def plot_spots(all_pos, all_miller, intensities, out_str, top_spots=60,
+               out_path=None):
 
     fig = plt.figure(figsize=(6, 6))
     ax = fig.add_axes([0.15, 0.12, 0.80, 0.84])
@@ -141,7 +146,12 @@ def plot_spots(all_pos, all_miller, intensities, out_str, top_spots=60):
                linewidths=0)
     ax.scatter(kxs, kys, marker='o', s=1 + 2*abs(np.log(ints_all)),
                c='C3', linewidths=0, cmap='jet')
-    plt.savefig(f'image_{out_str}.png', dpi=400)
+    out_file = f'image_{out_str}.png'
+
+    if out_path is not None:
+        out_file = out_path + '/' + out_file
+    plt.savefig(out_file, dpi=400)
+    plt.close(fig)
 
 
 def save_as_npz(df, filename):
