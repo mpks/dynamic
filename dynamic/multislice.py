@@ -31,7 +31,7 @@ def make_system(cif_file, angles_file, thickness_nm=1, size_xy_nm=None,
     print(f"Original file: {original_file}")
 
     alpha, beta, gamma = angles[image_index]
-    a0, b0, c0 = initial_orientations[image_index]
+    a0, b0, c0 = initial_orientations
 
     tpb = ase.io.read(cif_file)
 

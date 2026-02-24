@@ -20,13 +20,16 @@ def extract_scan(shelx_spots, file_template='spots_image_####.npz',
 
         for ind_m, (miller, intensity) in enumerate(zip(millers, ints)):
 
+            H, K, L = miller
+            int_miller = (int(H), int(K), int(L))
             for spot in shelx_spots:
-                if spot.is_miller(miller):
-                    if spot.miller in rocking_curves:
-                        rocking_curves[spot.miller][idx] = intensity
+                if spot.is_miller(int_miller):
+                    print("FOUND MATCHING", idx, miller)
+                    if int_miller in rocking_curves:
+                        rocking_curves[int_miller][idx] = intensity
                     else:
-                        rocking_curves[spot.miller] = np.zeros(npts)
-                        rocking_curves[spot.miller][idx] = intensity
+                        rocking_curves[int_miller] = np.zeros(npts)
+                        rocking_curves[int_miller][idx] = intensity
 
     millers_end = [i for i in rocking_curves.keys()]
     rcs = []

@@ -25,7 +25,7 @@ def make_system_bloch(cif_file, angles_file, thickness_nm=1, image_index=0,
     initial_orientations = data['initial_orientations']
 
     alpha, beta, gamma = angles[image_index]
-    a0, b0, c0 = initial_orientations[image_index]
+    a0, b0, c0 = initial_orientations
 
     tpb = ase.io.read(cif_file)
 
