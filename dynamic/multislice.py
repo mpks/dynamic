@@ -93,7 +93,7 @@ def make_system(cif_file, angles_file, thickness_nm=1, size_xy_nm=None,
 
     abtem.show_atoms(repeated_tpb, ax=ax1, plane="xz")
     base = f"{shape}_z_{thickness_nm:05.1f}_nm_xy_{size_xy_nm:05.1f}_nm"
-    out_str = f"{image_index:03d}_{base}"
+    out_str = f"{image_index:04d}_{base}"
     plt.savefig(f'system_{base}_multiclice.png', dpi=400)
 
     nx = int(size_xy_angs / a_cell)
@@ -108,9 +108,10 @@ def make_system(cif_file, angles_file, thickness_nm=1, size_xy_nm=None,
                                 slice_thickness=slice_thickness,
                                 projection="finite")
 
-    plane_wave = abtem.PlaneWave(gpts=gpts, extent=extent, energy=200e3)
-    waves = plane_wave.build()
-    waves.compute()
+    # plane_wave = abtem.PlaneWave(gpts=gpts, extent=extent, energy=200e3)
+    plane_wave = abtem.PlaneWave(energy=200e3)
+    # waves = plane_wave.build()
+    # waves.compute()
 
     print("Doing multislice")
     exit_wave = plane_wave.multislice(potential, max_batch=8)

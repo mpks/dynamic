@@ -59,6 +59,7 @@ def get_shelx_spots(material='paracetamol', exp_id=None):
                     intensity=I[i], sigma=sigma[i], x=x[i], y=y[i],
                     z=int(z[i]))
         spot.zz = float(z[i])
+        spot.zz_cal = float(z1[i])
         spot.folder = folder[i]
         if exp_id:
             if spot.folder == exp_id:

@@ -139,3 +139,75 @@ def compute_s1(x, y, experiment):
     s1 = np.array(s1)
 
     return s1[0]
+
+
+def scale_intensities_wr(I1, I2, sigma1, sigma2,
+                         keep_first=True, return_wr=False):
+    """
+    Scale intensities minimizing wR factor using sigma weights.
+
+    wR = sqrt( sum(w * (Fo - k*Fc)^2) / sum(w * Fo^2) )
+    where w = 1/sigma^2
+
+    Parameters
+    ----------
+    I1, I2 : array-like, observed and calculated intensities
+    sigma1, sigma2 : array-like, sigmas corresponding to I1 and I2
+    keep_first : if True, scale I2 to I1; if False, scale I1 to I2
+    """
+    I1 = np.array(I1, dtype=float)
+    I2 = np.array(I2, dtype=float)
+    sigma1 = np.array(sigma1, dtype=float)
+    sigma2 = np.array(sigma2, dtype=float)
+
+    I1[I1 < 0] = 0
+    I2[I2 < 0] = 0
+
+    if keep_first:
+        scale, wr = find_best_scale_wr(I1, I2, sigma1)
+        I2 = scale * I2
+    else:
+        scale, wr = find_best_scale_wr(I2, I1, sigma2)
+        I1 = scale * I1
+
+    if return_wr:
+        return I1, I2, wr
+    else:
+        return I1, I2
+
+
+def find_best_scale_wr(Iobs, Icalc, sigma):
+    """
+    Find scaling factor k minimizing wR between Iobs and k*Icalc.
+
+    wR = sqrt( sum(w*(Iobs - k*Icalc)^2) / sum(w*Iobs^2) )
+    where w = 1/sigma^2
+
+    Note: this has an analytical solution, so no optimizer needed.
+    k = sum(w * Iobs * Icalc) / sum(w * Icalc^2)
+    """
+    Iobs = np.asarray(Iobs, dtype=float)
+    Icalc = np.asarray(Icalc, dtype=float)
+    sigma = np.asarray(sigma, dtype=float)
+
+    # Avoid division by zero
+    valid = sigma > 0
+    Iobs, Icalc, sigma = Iobs[valid], Icalc[valid], sigma[valid]
+
+    w = 1.0 / sigma**2
+
+    # Analytical optimal scale
+    k_best = np.sum(w * Iobs * Icalc) / np.sum(w * Icalc**2)
+
+    wr_best = wr_factor(k_best, Iobs, Icalc, w)
+    print(f"wR scaling - wR = {wr_best:.4f}  scale = {k_best:.4f}")
+    return k_best, wr_best
+
+
+def wr_factor(k, Iobs, Icalc, w):
+    """
+    wR = sqrt( sum(w*(Iobs - k*Icalc)^2) / sum(w*Iobs^2) )
+    """
+    numerator = np.sum(w * (Iobs - k * Icalc)**2)
+    denominator = np.sum(w * Iobs**2)
+    return np.sqrt(numerator / denominator)
