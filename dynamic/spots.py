@@ -4,7 +4,7 @@ from dynamic.kinematic import StructureFactorCalculator
 from multiprocessing import Pool
 import numpy as np
 from dynamic.io import read_dials_hkl
-from typing import List
+from typing import List, Literal
 from dials.array_family import flex
 import matplotlib.pyplot as plt
 import gemmi
@@ -320,15 +320,98 @@ class SpotsList:
         return cls(spots, material=material, output_prefix=output_prefix)
 
     @classmethod
-    def from_refl(cls,
-                  refl_file: str,
-                  expt_file: str,
-                  material: str = 'paracetamol',
-                  output_prefix: str = '0000',
-                  fitted_profile: bool = True,
-                  exp_id: int = None,
-                  scale: bool = False,
-                  ):
+    def from_expt_refl_separated(cls,
+                                 expt_file: str,
+                                 refl_file: str,
+                                 material: str = 'paracetamol',
+                                 output_prefix: str = '0000',
+                                 intensity: Literal['prf',
+                                                    'sum',
+                                                    ] = 'sum',
+                                 ):
+        """
+        Same as SpotsList.from_expt_refl, but now read all spots into
+        a list of SpotsList objects (one for each experiment)
+
+        Parameters
+        ----------
+        expt_file: Path or string
+            Path of the DIALS experiment file (*.expt).
+        refl_file: Path or string
+            Path of the DIALS reflection file (*.refl).
+        material: string
+            Name of the material. Used to select specific cif files.
+        intensity: "prf", "sum", or "scale"
+            Choose which intensity to read from the reflection table.
+        exp_id: integer
+            If supplied, the function will read only spots from one
+            specific experiment from the given expt and refl files.
+            If not supplied, the function will read all the spots from
+            the refl and expt files into a single SpotsList
+
+        Returns
+        -------
+
+        spots: A list of SpotsList objects
+            A list of SpotsList objects (each for a single experiment in
+            the provided expt and refl files).
+        """
+
+        expt = ExperimentListFactory.from_json_file(expt_file,
+                                                    check_format=False)
+
+        spots_all = []
+
+        for exp_id in range(len(expt)):
+
+            print(f"Reading exp {exp_id:04d}")
+            spots = cls.from_expt_refl(expt_file=expt_file,
+                                       refl_file=refl_file,
+                                       material=material,
+                                       output_prefix=output_prefix,
+                                       intensity=intensity,
+                                       exp_id=exp_id)
+
+            spots_all.append(spots)
+
+        return spots_all
+
+    @classmethod
+    def from_expt_refl(cls,
+                       expt_file: str,
+                       refl_file: str,
+                       material: str = 'paracetamol',
+                       output_prefix: str = '0000',
+                       intensity: Literal['prf', 'sum', 'scale'] = 'sum',
+                       exp_id: int = None,
+                       ):
+        """
+        Read diffraction spots from a pair of expt, and refl files,
+        and return them as a SpotsList object.
+
+        Parameters
+        ----------
+        expt_file: Path or string
+            Path of the DIALS experiment file (*.expt).
+        refl_file: Path or string
+            Path of the DIALS reflection file (*.refl).
+        material: string
+            Name of the material. Used to select specific cif files.
+        intensity: "prf", "sum", or "scale"
+            Choose which intensity to read from the reflection table.
+        exp_id: integer
+            If supplied, the function will read only spots from one
+            specific experiment from the given expt and refl files.
+            If not supplied, the function will read all the spots from
+            the refl and expt files into a single SpotsList
+
+        Returns
+        -------
+
+        spots: SpotsList object
+            A list of diffraction spots extracted from the pair of
+            expt and refl files.
+        """
 
         refl = flex.reflection_table.from_file(refl_file)
 
@@ -342,17 +425,20 @@ class SpotsList:
         hkl_flex = refl["miller_index"]
         hkl_list = [hkl_flex[i] for i in range(len(hkl_flex))]
 
-        if fitted_profile:
+        if intensity == 'prf':
             intensities = list(refl["intensity.prf.value"])
             sigmas = list(refl["intensity.prf.variance"])
-        else:
+        elif intensity == 'sum':
             intensities = list(refl["intensity.sum.value"])
             sigmas = list(refl["intensity.sum.variance"])
-
-        if scale:
+        elif intensity == 'scale':
             intensities = np.array(refl["intensity.scale.value"])
-            # scales = np.array(refl["inverse_scale_factor"])
-            # intensities = intensities / scales
+            scales = np.array(refl["inverse_scale_factor"])
+            intensities = intensities / scales
+        else:
+            msg = f"Unknown option 'intensity' = '{intensity}' \n"
+            msg += "Use 'prf', 'sum', or 'scale'"
+            raise ValueError(msg)
 
         vals = list(refl["xyzobs.px.value"])       # list of floats
 
@@ -485,20 +571,26 @@ class SpotsList:
 
         return cls(spots, material=material, output_prefix=output_prefix)
 
-    def save_to_hkl(self, filename='output.hkl'):
+    def to_hkl(self, filename='output.hkl',
+               intensity: Literal['obs', 'cal', 'fit'] = 'obs'):
 
         with open(filename, 'w') as f:
 
             for spot in self.spots:
                 H, K, L = spot.miller
-                if spot.intensity > 0:
-                    intensity = (spot.Fo_corrected * self.global_scale)**2
-                # else:
-                #     intensity = spot.intensity
-                    sig = spot.sigma
-                    line = f"{H:4d}{K:4d}{L:4d}  {intensity:12.4f}  "
-                    line += f"{sig:10.4f}\n"
-                    f.write(line)
+                if intensity == 'obs':
+                    save_intensity = spot.intensity
+                elif intensity == 'cal':
+                    if spot.intensity > 0:
+                        save_intensity = (spot.Fo_corrected *
+                                          self.global_scale)**2
+                    else:
+                        save_intensity = spot.intensity
+
+                sig = spot.sigma
+                line = f"{H:4d}{K:4d}{L:4d}  {save_intensity:12.4f}  "
+                line += f"{sig:10.4f}\n"
+                f.write(line)
 
     def is_miller_in(self, miller_index):
 
