@@ -129,9 +129,9 @@ def compute_s1(x, y, experiment):
     """Set observed s1 vectors for reflections if required, return the number
     of reflections that have been set."""
 
-    detector = experiment.detectors()[0]
+    detector = experiment.detector
     panel = detector[0]
-    beam = experiment.beams()[0]
+    beam = experiment.beam
     xy = flex.vec2_double(flex.double([x]), flex.double([y]))
     s1 = panel.get_lab_coord(xy)
     s1 = s1 / s1.norms() * (1 / beam.get_wavelength())

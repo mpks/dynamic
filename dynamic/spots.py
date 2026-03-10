@@ -13,6 +13,7 @@ from dynamic.calc import find_best_scale
 from dynamic.calc import s1_distance
 from dxtbx.model.experiment_list import ExperimentListFactory
 from dynamic.calc import compute_s1
+from dynamic.reciprocal_lattice import compute_kxyz
 
 
 class Spot:
@@ -26,6 +27,9 @@ class Spot:
                  x: float = None,
                  y: float = None,
                  z: int = None,
+                 kx: float = None,
+                 ky: float = None,
+                 kz: float = None,
                  resolution: float = None,
                  Fc: float = None,
                  Fo_corrected: float = None,
@@ -56,6 +60,9 @@ class Spot:
         self.x = x
         self.y = y
         self.z = z
+        self.kx = kx,
+        self.ky = ky,
+        self.kz = kz,
         self.s1_x = s1_z
         self.s1_y = s1_y
         self.s1_z = s1_z
@@ -168,6 +175,9 @@ class SpotsList:
         xs = data['xs']
         ys = data['ys']
         zs = data['zs']
+        kxs = data['kxs']
+        kys = data['kys']
+        kzs = data['kzs']
         s1_xs = data['s1_xs']
         s1_ys = data['s1_ys']
         s1_zs = data['s1_zs']
@@ -193,6 +203,9 @@ class SpotsList:
             x = xs[idx]
             y = ys[idx]
             z = zs[idx]
+            kx = kxs[idx]
+            ky = kys[idx]
+            kz = kzs[idx]
             s1_x = s1_xs[idx]
             s1_y = s1_ys[idx]
             s1_z = s1_zs[idx]
@@ -207,7 +220,7 @@ class SpotsList:
             Fo_corrected = Fos_corrected[idx]
 
             spot = Spot(H=H, K=K, L=L, intensity=intensity,
-                        sigma=sigma, x=x, y=y, z=z,
+                        sigma=sigma, x=x, y=y, z=z, kx=kx, ky=ky, kz=kz,
                         s1_x=s1_x, s1_y=s1_y, s1_z=s1_z,
                         resolution=resolution,
                         Fc=Fc, Fo_corrected=Fo_corrected,
@@ -236,6 +249,9 @@ class SpotsList:
         xs = []
         ys = []
         zs = []
+        kxs = []
+        kys = []
+        kzs = []
         s1_xs = []
         s1_ys = []
         s1_zs = []
@@ -255,6 +271,9 @@ class SpotsList:
             xs.append(spot.x)
             ys.append(spot.y)
             zs.append(spot.z)
+            kxs.append(spot.kx)
+            kys.append(spot.ky)
+            kzs.append(spot.kz)
             s1_xs.append(spot.s1_x)
             s1_ys.append(spot.s1_y)
             s1_zs.append(spot.s1_z)
@@ -270,6 +289,7 @@ class SpotsList:
         print(f"Saving SpotsList into npz file: {npz_file}")
         np.savez(npz_file, Hs=Hs, Ks=Ks, Ls=Ls, xs=xs, ys=ys, zs=zs,
                  s1_xs=s1_xs, s1_ys=s1_ys, s1_zs=s1_zs,
+                 kxs=kxs, kys=kys, kzs=kzs,
                  intensities=intensities, sigmas=sigmas,
                  resolutions=resolutions, Fcs=Fcs, Fos=Fos,
                  Fos_scaled=Fos_scaled, Fos_corrected=Fos_corrected,
@@ -320,69 +340,12 @@ class SpotsList:
         return cls(spots, material=material, output_prefix=output_prefix)
 
     @classmethod
-    def from_expt_refl_separated(cls,
-                                 expt_file: str,
-                                 refl_file: str,
-                                 material: str = 'paracetamol',
-                                 output_prefix: str = '0000',
-                                 intensity: Literal['prf',
-                                                    'sum',
-                                                    ] = 'sum',
-                                 ):
-        """
-        Same as SpotsList.from_expt_refl, but now read all spots into
-        a list of SpotsList objects (one for each experiment)
-
-        Parameters
-        ----------
-        expt_file: Path or string
-            Path of the DIALS experiment file (*.expt).
-        refl_file: Path or string
-            Path of the DIALS reflection file (*.refl).
-        material: string
-            Name of the material. Used to select specific cif files.
-        intensity: "prf", "sum", or "scale"
-            Choose which intensity to read from the reflection table.
-        exp_id: integer
-            If supplied, the function will read only spots from one
-            specific experiment from the given expt and refl files.
-            If not supplied, the function will read all the spots from
-            the refl and expt files into a single SpotsList
-
-        Returns
-        -------
-
-        spots: A list of SpotsList objects
-            A list of SpotsList objects (each for a single experiment in
-            the provided expt and refl files).
-        """
-
-        expt = ExperimentListFactory.from_json_file(expt_file,
-                                                    check_format=False)
-
-        spots_all = []
-
-        for exp_id in range(len(expt)):
-
-            print(f"Reading exp {exp_id:04d}")
-            spots = cls.from_expt_refl(expt_file=expt_file,
-                                       refl_file=refl_file,
-                                       material=material,
-                                       output_prefix=output_prefix,
-                                       intensity=intensity,
-                                       exp_id=exp_id)
-
-            spots_all.append(spots)
-
-        return spots_all
-
-    @classmethod
     def from_expt_refl(cls,
                        expt_file: str,
                        refl_file: str,
                        material: str = 'paracetamol',
                        output_prefix: str = '0000',
-                       intensity: Literal['prf', 'sum', 'scale'] = 'sum',
+                       intensity: Literal['prf', 'sum'] = 'sum',
                        exp_id: int = None,
                        ):
         """
@@ -397,7 +360,7 @@ class SpotsList:
             Path of the DIALS reflection file (*.refl).
         material: string
             Name of the material. Used to select specific cif files.
-        intensity: "prf", "sum", or "scale"
+        intensity: "prf", "sum"
             Choose which intensity to read from the reflection table.
         exp_id: integer
             If supplied, the function will read only spots from one
@@ -415,13 +378,16 @@ class SpotsList:
 
         refl = flex.reflection_table.from_file(refl_file)
 
-        if exp_id:
-            refl = refl.select(refl['id'] == exp_id)
+        if not exp_id:
+            exp_id = 0
 
+        refl = refl.select(refl['id'] == exp_id)
         spots = []
 
         expt = ExperimentListFactory.from_json_file(expt_file,
                                                     check_format=False)
+        expt = expt[exp_id]
+
         hkl_flex = refl["miller_index"]
         hkl_list = [hkl_flex[i] for i in range(len(hkl_flex))]
 
@@ -431,26 +397,27 @@ class SpotsList:
         elif intensity == 'sum':
             intensities = list(refl["intensity.sum.value"])
             sigmas = list(refl["intensity.sum.variance"])
-        elif intensity == 'scale':
-            intensities = np.array(refl["intensity.scale.value"])
-            scales = np.array(refl["inverse_scale_factor"])
-            intensities = intensities / scales
         else:
             msg = f"Unknown option 'intensity' = '{intensity}' \n"
-            msg += "Use 'prf', 'sum', or 'scale'"
+            msg += "Use 'prf', or 'sum'"
             raise ValueError(msg)
 
         vals = list(refl["xyzobs.px.value"])       # list of floats
 
+        kxyz = compute_kxyz(hkl_list, expt_file, exp_id)
+
         for i in range(len(hkl_list)):
 
             H, K, L = hkl_list[i]
+            kx, ky, kz = kxyz[i]
             x, y, z = vals[i]
             s1_x, s1_y, s1_z = compute_s1(x, y, expt)
 
             intensity = intensities[i]
             sigma = sigmas[i]
-            spot = Spot(H, K, L, intensity, sigma=sigma, x=x, y=y, z=int(z),
+            spot = Spot(H, K, L, intensity, sigma=sigma,
+                        x=x, y=y, z=int(z),
+                        kx=kx, ky=ky, kz=kz,
                         s1_x=s1_x, s1_y=s1_y, s1_z=s1_z)
             spots.append(spot)
 
@@ -553,6 +520,38 @@ class SpotsList:
         return indices, R1s, image_scales
 
     @classmethod
+    def from_hkl_extended(cls,
+                          hkl_filename: str,
+                          scaled_expt_file: str,
+                          material: str = 'paracetamol',
+                          exp_id: int = 0):
+
+        data = np.loadtxt(hkl_filename).T
+        H, K, L, I, sigma, exp_ids, x, y, z, z1 = data
+
+        millers = [(int(H[i]), int(K[i]), int(L[i]))
+                   for i in range(len(H))]
+
+        kxyz = compute_kxyz(millers, expt_file=scaled_expt_file,
+                            exp_id=exp_id)
+
+        spots = []
+        for i in range(len(H)):
+            if exp_id == exp_ids[i]:
+                kx, ky, kz = kxyz[i]
+                spot = Spot(H=int(H[i]), K=int(K[i]), L=int(L[i]),
+                            kx=kx, ky=ky, kz=kz,
+                            intensity=I[i], sigma=sigma[i], x=x[i], y=y[i],
+                            z=int(z[i]))
+                spot.zz = float(z[i])
+                spot.zz_cal = float(z1[i])
+                spot.exp_id = exp_ids[i]
+                spots.append(spot)
+
+        spots = SpotsList(spots, output_prefix='scaled')
+        return spots
+
+    @classmethod
     def from_hkl(cls,
                  hkl_filename: str,
                  material: str = 'paracetamol',
@@ -621,7 +620,6 @@ class SpotsList:
 
         scale, r1_best = find_best_scale(Fo, Fc)
 
-        # scale = Fo.mean() / Fc.mean()
         self.global_scale = scale
         self.average_Fo = Fo.mean()
         self.median_Fo = np.median(Fo)
