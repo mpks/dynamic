@@ -579,12 +579,14 @@ class SpotsList:
                 H, K, L = spot.miller
                 if intensity == 'obs':
                     save_intensity = spot.intensity
-                elif intensity == 'cal':
+                elif intensity == 'fit':
                     if spot.intensity > 0:
                         save_intensity = (spot.Fo_corrected *
                                           self.global_scale)**2
                     else:
                         save_intensity = spot.intensity
+                elif intensity == 'cal':
+                    save_intensity = (spot.Fc * self.global_scale)**2
 
                 sig = spot.sigma
                 line = f"{H:4d}{K:4d}{L:4d}  {save_intensity:12.4f}  "

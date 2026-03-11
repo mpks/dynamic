@@ -14,6 +14,7 @@ def write_spots_to_refl(
     output_file: str,
     mode: Literal["sum", "prf"] = "prf",
     unmatched_policy: Literal["keep", "zero", "warn"] = "keep",
+    intensity_mode: Literal["obs", "cal", "fit"] = "fit",
 ) -> dict:
     """
     Update intensity values in a DIALS reflection table from a list of
@@ -39,6 +40,10 @@ def write_spots_to_refl(
           "keep" -> leave the original value unchanged (default)
           "zero" -> set intensity to 0.0 and variance to 1.0
           "warn" -> same as keep but print a warning for each unmatched refl
+    intensity_mode : "obs", "cal", "fit"
+        If "obs" it will save the observed intensity.
+        If "cal" it will save scaled kinematic intensity.
+        If "fit" it will save scaled corrected intensity.
 
     Returns
     -------
@@ -96,7 +101,18 @@ def write_spots_to_refl(
 
         if key in spot_lookup:
             spot = spot_lookup[key]
-            values[row_idx] = spot.intensity
+            if intensity_mode == 'obs':
+                values[row_idx] = spot.intensity
+            elif intensity_mode == 'cal':
+                values[row_idx] = (spot.Fc * spots.global_scale)**2
+            elif intensity_mode == 'fit':
+                values[row_idx] = (spot.Fo_corrected *
+                                   spots.global_scale)**2
+            else:
+                msg = f"Unknown intensity_mode: {intensity_mode}\n"
+                msg += "Use either 'obs', 'cal', or 'fit'"
+                raise ValueError(msg)
+
             variances[row_idx] = spot.sigma
             stats["matched"] += 1
         else:
