@@ -3,6 +3,7 @@ import gemmi
 
 def get_resolution_calculator(cif_file):
 
+    cif_file = str(cif_file)
     doc = gemmi.cif.read_file(cif_file)
     block = doc.sole_block()
 

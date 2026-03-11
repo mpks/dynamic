@@ -319,3 +319,129 @@ def find_neighbors_in_xy(spot_index, spots_list, xy_distance_cutoff):
             neighbors.append(spot)
 
     return neighbors
+
+
+class LocalFitterKspace(LocalFitter):
+
+    def __init__(self, datasets: List[SpotsList],
+                 n_estimators=600,
+                 learning_rate=0.05,
+                 max_depth=5,
+                 random_state=1,
+                 xy_distance_cutoff=100.0):
+
+        self.datasets = datasets
+
+        total_spot_counter = 0
+        for idx, dataset in enumerate(self.datasets):
+            for spot in dataset:
+                total_spot_counter += 1
+
+        self.n_estimators = n_estimators
+        self.learning_rate = learning_rate
+        self.max_depth = max_depth
+        self.random_state = random_state
+        self.n_train_spots = total_spot_counter
+        self.distance_cutoff = xy_distance_cutoff
+        self.prefix = 'local'
+
+    def extract_training_data(self):
+
+        x = []
+        y = []
+
+        total_spot_counter = 0
+        for idx, dataset in enumerate(self.datasets):
+            print(f"Extracting data for dataset {idx} / {len(self.datasets)}")
+
+            group = dataset.group_by_image()
+
+            for key in group.keys():
+                spots_on_image = group[key]
+                spots_sorted = sorted(spots_on_image,
+                                      key=lambda spot: spot.resolution)
+
+                for index, spot in enumerate(spots_sorted):
+                    total_spot_counter += 1
+
+                    en = LocalSpotEnv(index, spots_sorted,
+                                      xy_distance_cutoff=self.distance_cutoff)
+
+                    # print("KXY", spot.kx[0][0], spot.ky[0][0], spot.kz)
+                    kx = spot.kx[0][0]
+                    ky = spot.ky[0][0]
+                    kz = spot.kz[0][0]
+                    x.append([kx, ky, kz, spot.z,
+                              spot.intensity, spot.sigma,
+                              spot.resolution, dataset.average_Fo,
+                              dataset.median_Fo, en.n_spots, en.i_max,
+                              en.i_min, en.i_mean, en.i_90, en.iqr,
+                              en.max_res,
+                              en.min_res, en.mean_res, en.n_neighbor,
+                              en.nn_avg_intensity, en.nn_max_intensity,
+                              en.nn_rel_intensity])
+
+                    y.append(spot.Fc)
+
+        print(f"Extracted {total_spot_counter} spots for training")
+        return np.array(x), np.array(y)
+
+    def train_fc_model(self, n_estimators=600, learning_rate=0.05,
+                       max_depth=5, random_state=0):
+
+        x, y = self.extract_training_data()
+
+        model = GradientBoostingRegressor(
+            n_estimators=n_estimators,
+            learning_rate=learning_rate,
+            max_depth=max_depth,
+            random_state=random_state
+        )
+
+        t1 = time.time()
+        model.fit(x, y)
+        t2 = time.time()
+        print(f"Training done in {(t2 - t1):.2f} sec")
+        self.model = model
+
+    def predict_fc_for_spot(self, spot, average_Fo, median_Fo):
+        model = self.model
+        kx = spot.kx[0][0]
+        ky = spot.ky[0][0]
+        kz = spot.kz[0][0]
+
+        x = np.array([[kx, ky, kz, spot.z, spot.intensity,
+                       spot.sigma, spot.resolution, average_Fo, median_Fo
+                       ]])
+        return float(model.predict(x)[0])
+
+    def apply_fc_model(self, spots_list: SpotsList):
+
+        model = self.model
+
+        group = spots_list.group_by_image()
+
+        for key in group.keys():
+            spots_on_image = group[key]
+            spots_sorted = sorted(spots_on_image,
+                                  key=lambda spot: spot.resolution)
+
+            for index, spot in enumerate(spots_sorted):
+
+                en = LocalSpotEnv(index, spots_sorted,
+                                  xy_distance_cutoff=self.distance_cutoff)
+
+                kx = spot.kx[0][0]
+                ky = spot.ky[0][0]
+                kz = spot.kz[0][0]
+
+                x = np.array([kx, ky, kz, spot.z,
+                              spot.intensity, spot.sigma,
+                              spot.resolution, spots_list.average_Fo,
+                              spots_list.median_Fo, en.n_spots, en.i_max,
+                              en.i_min, en.i_mean, en.i_90, en.iqr, en.max_res,
+                              en.min_res, en.mean_res, en.n_neighbor,
+                              en.nn_avg_intensity, en.nn_max_intensity,
+                              en.nn_rel_intensity])
+                Fo_corrected = float(model.predict([x])[0])
+                spot.Fo_corrected = Fo_corrected

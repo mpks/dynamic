@@ -84,7 +84,7 @@ def make_system_bloch(cif_file, angles_file,
     print("Calculating diffraction patterns at thickness:" +
           f"{thickness:.1f} Angstroms")
 
-    out_str = f"{image_index:04d}_z_{thickness_nm:05.1f}_nm_kmax_{k_max:03d}"
+    out_str = f"{image_index:06d}_z_{thickness_nm:05.1f}_nm_kmax_{k_max:03d}"
 
     # ------------------------------------------------------------------
     # Frozen phonon loop

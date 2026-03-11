@@ -6,10 +6,11 @@ import sys
 
 def main():
 
-    input_files = sys.argv[1:]
+    input_files = sys.argv[2:]
+    sub_samples = int(sys.argv[1])
 
     for file in input_files:
-        interpolate(file)
+        interpolate(file, subsamples=sub_samples)
 
 
 def interpolate(input_file, subsamples=50):
