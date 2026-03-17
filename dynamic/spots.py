@@ -79,7 +79,8 @@ class Spot:
     def __str__(self):
 
         spot_str = f"({self.H:+3d}, {self.K:+3d}, {self.L:+3d})"
-        spot_str += f" I = {self.intensity:>8.2f}, z = {self.z:04d}"
+        spot_str += f" I = {self.intensity:>8.2f}, {self.sigma:.3f} "
+        spot_str += f"z = {self.z:04d}"
         return spot_str
 
     def is_miller(self, *args):
@@ -113,6 +114,8 @@ class SpotsList:
             cif_file = '/home/marko/active/dd/data/our_paracetamol.cif'
         elif material == 'ireloh':
             cif_file = '/home/marko/active/dd/data/1870980_ireloh.cif'
+        elif material == 'biotin':
+            cif_file = '/home/marko/active/dd/data/2083844_biotin.cif'
         else:
             raise ValueError('Unknown material: ', material)
         self.material = material
@@ -404,7 +407,7 @@ class SpotsList:
 
         vals = list(refl["xyzobs.px.value"])       # list of floats
 
-        kxyz = compute_kxyz(hkl_list, expt_file, exp_id)
+        kxyz = compute_kxyz(hkl_list, expt_file)
 
         for i in range(len(hkl_list)):
 
@@ -532,8 +535,7 @@ class SpotsList:
         millers = [(int(H[i]), int(K[i]), int(L[i]))
                    for i in range(len(H))]
 
-        kxyz = compute_kxyz(millers, expt_file=scaled_expt_file,
-                            exp_id=exp_id)
+        kxyz = compute_kxyz(millers, expt_file=scaled_expt_file)
 
         spots = []
         for i in range(len(H)):

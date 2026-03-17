@@ -1,12 +1,10 @@
-from typing import List
 from dxtbx.model.experiment_list import ExperimentListFactory
 from scitbx import matrix
 import numpy as np
 
 
 def compute_kxyz(miller_list: list[tuple[int, int, int]],
-                 expt_file: str,
-                 exp_id: int):
+                 expt_file: str):
     """
     Compute a sequence of positions in the reciprocal space from
     a sequence of Miller indices. The positions are computed in the
@@ -20,9 +18,6 @@ def compute_kxyz(miller_list: list[tuple[int, int, int]],
         in the reciprocal space.
     expt_file : str or Path
         The DIALS expt file.
-    exp_id : integer
-        The integer of the experiment for which to compute the
-        reciprocal space position.
 
     Returns
     -------
@@ -32,19 +27,25 @@ def compute_kxyz(miller_list: list[tuple[int, int, int]],
     """
 
     experiments = ExperimentListFactory.from_json_file(expt_file)
-    experiment = experiments[exp_id]
+    n_exp = len(experiments)
 
-    crystal = experiment.crystal
+    B_avg = 0
+    for i in range(n_exp):
+        experiment = experiments[i]
+        crystal = experiment.crystal
+        B = matrix.sqr(crystal.get_B())
+        B_avg += np.array(B)
 
-    B = matrix.sqr(crystal.get_B())
+    B = B_avg.reshape((3, 3)) / n_exp
 
     k_vecs = []
 
     for miller in miller_list:
 
         H, K, L = miller
-        hkl = matrix.col((int(H), int(K), int(L)))
-        k_vec = np.array(B * hkl)
+        hkl = np.array([int(H), int(K), int(L)])
+
+        k_vec = B @ hkl
 
         k_vecs.append(k_vec)
 
