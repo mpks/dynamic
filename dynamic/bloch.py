@@ -5,6 +5,7 @@ import ase
 import matplotlib.pyplot as plt
 import numpy as np
 import numba
+from scipy.spatial.transform import Rotation
 numba.set_num_threads(2)
 
 
@@ -67,9 +68,19 @@ def make_system_bloch(cif_file, angles_file,
     if show:
         abtem.show_atoms(tpb, plane="xy", scale=0.5, legend=True)
 
-    tpb.rotate(alpha, 'x', rotate_cell=True)
-    tpb.rotate(beta,  'y', rotate_cell=True)
-    tpb.rotate(gamma, 'z', rotate_cell=True)
+    # tpb.rotate(alpha, 'x', rotate_cell=True)
+    # tpb.rotate(beta,  'y', rotate_cell=True)
+    # tpb.rotate(gamma, 'z', rotate_cell=True)
+
+    R = Rotation.from_euler('xyz', [alpha, beta, gamma], degrees=True,
+                            ).as_matrix()
+    cell = tpb.get_cell()
+    new_cell = (R @ cell.T).T
+    tpb.set_cell(new_cell, scale_atoms=False)
+    # pos = tpb.get_positions()
+    # centre = pos.mean(axis=0)
+    # tpb.set_positions((R @ (pos - centre).T).T + centre)
+    # =================================================
     tpb.wrap()
 
     fig = plt.figure(figsize=(3.375, 3.0))

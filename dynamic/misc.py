@@ -40,13 +40,16 @@ def extract_scan(shelx_spots, file_template='spots_image_####.npz',
     np.savez(out_file, millers=millers_end, rcs=rcs)
 
 
-def get_shelx_spots(material='paracetamol', exp_id=None):
+def get_shelx_spots(hkl_temp_file=None,
+                    material='paracetamol', exp_id=None):
 
-    if material == 'paracetamol':
-        path = '/home/marko/stfc/paracetamol/filtered_one_deg/cluster_01/'
-        path += 'dials.hkl_temp'
-    else:
-        raise ValueError('Unknown material.')
+#    if material == 'paracetamol' and not hkl_temp_file:
+#        path = '/home/marko/stfc/paracetamol/filtered_one_deg/cluster_01/'
+#        path += 'dials.hkl_temp'
+#    else:
+#        raise ValueError('Unknown material.')
+
+    path = hkl_temp_file
 
     data = np.loadtxt(path).T
 
@@ -67,6 +70,6 @@ def get_shelx_spots(material='paracetamol', exp_id=None):
         else:
             spots.append(spot)
 
-    spots = SpotsList(spots, output_prefix='scaled')
+    spots = SpotsList(spots, material=material, output_prefix='scaled')
 
     return spots

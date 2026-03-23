@@ -11,14 +11,7 @@ import joblib
 import matplotlib.pyplot as plt
 
 
-LOCAL_FEATURE_NAMES = [
-    'H', 'K', 'L', 'z', 'intensity', 'sigma', 'resolution',
-    'average_Fo', 'median_Fo', 'n_spots', 'i_max', 'i_min',
-    'i_mean', 'i_90', 'iqr', 'max_res', 'min_res', 'mean_res',
-    'n_neighbor', 'nn_avg_intensity', 'nn_max_intensity', 'nn_rel_intensity'
-]
-
-KSPACE_FEATURE_NAMES = [
+FEATURE_NAMES = [
     'kx', 'ky', 'kz', 'z', 'intensity', 'sigma', 'resolution',
     'average_Fo', 'median_Fo', 'n_spots', 'i_max', 'i_min',
     'i_mean', 'i_90', 'iqr', 'max_res', 'min_res', 'mean_res',
@@ -28,7 +21,7 @@ KSPACE_FEATURE_NAMES = [
 
 class LocalFitter:
 
-    def __init__(self, datasets: List[SpotsList],
+    def __init__(self, datasets: List[SpotsList] = None,
                  n_estimators=600,
                  learning_rate=0.05,
                  max_depth=5,
@@ -36,12 +29,13 @@ class LocalFitter:
                  xy_distance_cutoff=100.0):
 
         self.datasets = datasets
-        self.feature_names = LOCAL_FEATURE_NAMES
+        self.feature_names = FEATURE_NAMES
 
         total_spot_counter = 0
-        for idx, dataset in enumerate(self.datasets):
-            for spot in dataset.spots:
-                total_spot_counter += 1
+        if datasets:
+            for idx, dataset in enumerate(self.datasets):
+                for spot in dataset:
+                    total_spot_counter += 1
 
         self.n_estimators = n_estimators
         self.learning_rate = learning_rate
@@ -73,7 +67,10 @@ class LocalFitter:
                     en = LocalSpotEnv(index, spots_sorted,
                                       xy_distance_cutoff=self.distance_cutoff)
 
-                    x.append([spot.H, spot.K, spot.L, spot.z,
+                    kx = spot.kx[0][0]
+                    ky = spot.ky[0][0]
+                    kz = spot.kz[0][0]
+                    x.append([kx, ky, kz, spot.z,
                               spot.intensity, spot.sigma,
                               spot.resolution, dataset.average_Fo,
                               dataset.median_Fo, en.n_spots, en.i_max,
@@ -106,6 +103,37 @@ class LocalFitter:
         print(f"Training done in {(t2 - t1):.2f} sec")
         self.model = model
 
+    def apply_fc_model(self, spots_list: SpotsList):
+
+        model = self.model
+
+        group = spots_list.group_by_image()
+
+        for key in group.keys():
+            spots_on_image = group[key]
+            spots_sorted = sorted(spots_on_image,
+                                  key=lambda spot: spot.resolution)
+
+            for index, spot in enumerate(spots_sorted):
+
+                en = LocalSpotEnv(index, spots_sorted,
+                                  xy_distance_cutoff=self.distance_cutoff)
+
+                kx = spot.kx[0][0]
+                ky = spot.ky[0][0]
+                kz = spot.kz[0][0]
+
+                x = np.array([kx, ky, kz, spot.z,
+                              spot.intensity, spot.sigma,
+                              spot.resolution, spots_list.average_Fo,
+                              spots_list.median_Fo, en.n_spots, en.i_max,
+                              en.i_min, en.i_mean, en.i_90, en.iqr, en.max_res,
+                              en.min_res, en.mean_res, en.n_neighbor,
+                              en.nn_avg_intensity, en.nn_max_intensity,
+                              en.nn_rel_intensity])
+                Fo_corrected = float(model.predict([x])[0])
+                spot.Fo_corrected = Fo_corrected
+
     def save_model(self, path=None, filename=None):
 
         if not filename:
@@ -118,8 +146,18 @@ class LocalFitter:
         if path:
             filename = path + '/' + filename
 
+        payload = {
+            "model": self.model,
+            "n_estimators": self.n_estimators,
+            "learning_rate": self.learning_rate,
+            "max_depth": self.max_depth,
+            "random_state": self.random_state,
+            "n_trains_spots": self.n_train_spots,
+            "distance_cutoff": self.distance_cutoff,
+        }
+
         print(f'Saving model in {filename}.')
-        joblib.dump(self.model, filename)
+        joblib.dump(payload, filename)
 
     def load_model(self, path=None, filename=None):
 
@@ -135,7 +173,22 @@ class LocalFitter:
             filename = path + '/' + filename
 
         print(f'Loading model from {filename}.')
-        self.model = joblib.load(filename)
+        payload = joblib.load(filename)
+
+        self.model = payload['model']
+        self.n_estimators = payload['n_estimators']
+        self.learning_rate = payload['learning_rate']
+        self.max_depth = payload['max_depth']
+        self.random_state = payload['random_state']
+        self.n_train_spots = payload['n_trains_spots']
+        self.distance_cutoff = payload['distance_cutoff']
+
+        print(f'n_estimators: {self.n_estimators}')
+        print(f'learning_rate: {self.learning_rate}')
+        print(f'max depth: {self.max_depth}')
+        print(f'random_state: {self.random_state}')
+        print(f'n_train_spots: {self.n_train_spots}')
+        print(f'distance_cutoff: {self.distance_cutoff}')
 
     def validate_fc_model(self):
         x, y = self.extract_training_data()
@@ -147,20 +200,6 @@ class LocalFitter:
 
         preds = self.model.predict(x)
         print("Correlation Fc_pred vs Fc_true:", pearsonr(preds, y)[0])
-
-    def predict_fc_for_spot(self, spot, average_Fo, median_Fo):
-        model = self.model
-        x = np.array([[spot.H, spot.K, spot.L, spot.z, spot.intensity,
-                       spot.sigma, spot.resolution, average_Fo, median_Fo
-                       ]])
-        return float(model.predict(x)[0])
-
-    def apply_fc_model(self, spots_list: SpotsList):
-        for spot in spots_list.spots:
-            predicted = self.predict_fc_for_spot(spot,
-                                                 spots_list.average_Fo,
-                                                 spots_list.median_Fo)
-            spot.Fo_corrected = predicted
 
     # ------------------------------------------------------------------
     # Feature analysis methods
@@ -194,6 +233,7 @@ class LocalFitter:
         print("\nRanked feature importances:")
         for i in reversed(sorted_idx):
             print(f"  {self.feature_names[i]:<22s}  {importances[i]:.4f}")
+        return self.feature_names, importances
 
     def run_rfecv(self, x=None, y=None,
                   n_estimators=100, cv=5, step=1):
@@ -330,136 +370,10 @@ class LocalFitter:
         self.tpot = tpot
         return tpot
 
-
-class LocalFitterKspace(LocalFitter):
-
-    def __init__(self, datasets: List[SpotsList],
-                 n_estimators=600,
-                 learning_rate=0.05,
-                 max_depth=5,
-                 random_state=1,
-                 xy_distance_cutoff=100.0):
-
-        self.datasets = datasets
-        self.feature_names = KSPACE_FEATURE_NAMES
-
-        total_spot_counter = 0
-        for idx, dataset in enumerate(self.datasets):
-            for spot in dataset:
-                total_spot_counter += 1
-
-        self.n_estimators = n_estimators
-        self.learning_rate = learning_rate
-        self.max_depth = max_depth
-        self.random_state = random_state
-        self.n_train_spots = total_spot_counter
-        self.distance_cutoff = xy_distance_cutoff
-        self.prefix = 'local'
-
-    def extract_training_data(self):
-
-        x = []
-        y = []
-
-        total_spot_counter = 0
-        for idx, dataset in enumerate(self.datasets):
-            print(f"Extracting data for dataset {idx} / {len(self.datasets)}")
-
-            group = dataset.group_by_image()
-
-            for key in group.keys():
-                spots_on_image = group[key]
-                spots_sorted = sorted(spots_on_image,
-                                      key=lambda spot: spot.resolution)
-
-                for index, spot in enumerate(spots_sorted):
-                    total_spot_counter += 1
-
-                    en = LocalSpotEnv(index, spots_sorted,
-                                      xy_distance_cutoff=self.distance_cutoff)
-
-                    kx = spot.kx[0][0]
-                    ky = spot.ky[0][0]
-                    kz = spot.kz[0][0]
-                    x.append([kx, ky, kz, spot.z,
-                              spot.intensity, spot.sigma,
-                              spot.resolution, dataset.average_Fo,
-                              dataset.median_Fo, en.n_spots, en.i_max,
-                              en.i_min, en.i_mean, en.i_90, en.iqr,
-                              en.max_res,
-                              en.min_res, en.mean_res, en.n_neighbor,
-                              en.nn_avg_intensity, en.nn_max_intensity,
-                              en.nn_rel_intensity])
-
-                    y.append(spot.Fc)
-
-        print(f"Extracted {total_spot_counter} spots for training")
-        return np.array(x), np.array(y)
-
-    def train_fc_model(self, n_estimators=600, learning_rate=0.05,
-                       max_depth=5, random_state=0):
-
-        x, y = self.extract_training_data()
-
-        model = GradientBoostingRegressor(
-            n_estimators=n_estimators,
-            learning_rate=learning_rate,
-            max_depth=max_depth,
-            random_state=random_state
-        )
-
-        t1 = time.time()
-        model.fit(x, y)
-        t2 = time.time()
-        print(f"Training done in {(t2 - t1):.2f} sec")
-        self.model = model
-
-    def predict_fc_for_spot(self, spot, average_Fo, median_Fo):
-        model = self.model
-        kx = spot.kx[0][0]
-        ky = spot.ky[0][0]
-        kz = spot.kz[0][0]
-
-        x = np.array([[kx, ky, kz, spot.z, spot.intensity,
-                       spot.sigma, spot.resolution, average_Fo, median_Fo
-                       ]])
-        return float(model.predict(x)[0])
-
-    def apply_fc_model(self, spots_list: SpotsList):
-
-        model = self.model
-
-        group = spots_list.group_by_image()
-
-        for key in group.keys():
-            spots_on_image = group[key]
-            spots_sorted = sorted(spots_on_image,
-                                  key=lambda spot: spot.resolution)
-
-            for index, spot in enumerate(spots_sorted):
-
-                en = LocalSpotEnv(index, spots_sorted,
-                                  xy_distance_cutoff=self.distance_cutoff)
-
-                kx = spot.kx[0][0]
-                ky = spot.ky[0][0]
-                kz = spot.kz[0][0]
-
-                x = np.array([kx, ky, kz, spot.z,
-                              spot.intensity, spot.sigma,
-                              spot.resolution, spots_list.average_Fo,
-                              spots_list.median_Fo, en.n_spots, en.i_max,
-                              en.i_min, en.i_mean, en.i_90, en.iqr, en.max_res,
-                              en.min_res, en.mean_res, en.n_neighbor,
-                              en.nn_avg_intensity, en.nn_max_intensity,
-                              en.nn_rel_intensity])
-                Fo_corrected = float(model.predict([x])[0])
-                spot.Fo_corrected = Fo_corrected
-
-
 # ------------------------------------------------------------------
 # Helper classes / functions (unchanged)
 # ------------------------------------------------------------------
+
 
 class LocalSpotEnv:
 

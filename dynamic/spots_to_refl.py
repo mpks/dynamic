@@ -8,14 +8,16 @@ import numpy as np
 from dynamic.spots import SpotsList
 
 
-def write_spots_to_refl(
-    spots: SpotsList,
-    refl_file: str,
-    output_file: str,
-    mode: Literal["sum", "prf"] = "prf",
-    unmatched_policy: Literal["keep", "zero", "warn"] = "keep",
-    intensity_mode: Literal["obs", "cal", "fit"] = "fit",
-) -> dict:
+def write_spots_to_refl(spots: SpotsList,
+                        refl_file: str,
+                        output_file: str,
+                        mode: Literal["sum", "prf"] = "prf",
+                        unmatched_policy: Literal["keep", 
+                                                  "zero", 
+                                                  "warn"] = "keep",
+                        intensity_mode: Literal["obs", 
+                                                "cal", 
+                                                "fit"] = "fit",) -> dict:
     """
     Update intensity values in a DIALS reflection table from a list of
     SpotsList objects (one per experiment index) and write to a new file.
@@ -23,24 +25,35 @@ def write_spots_to_refl(
     Parameters
     ----------
     spots : SpotsList
+
         One SpotsList contains the spots for a single experiment.
         The function assumes there is only one experiment in the
         experiment list.
+
     refl_file : str
+
         Path to the input cluster_1.refl file.
+
     output_file : str
+
         Path to write the modified reflection table.
+
     mode : "sum" or "prf"
+
         Which intensity column to modify:
-          "prf" -> intensity.prf.value / intensity.prf.variance
-          "sum" -> intensity.sum.value / intensity.sum.variance
+        "prf" -> intensity.prf.value / intensity.prf.variance
+        "sum" -> intensity.sum.value / intensity.sum.variance
+
     unmatched_policy : "keep", "zero", or "warn"
+
         What to do with reflections in the refl file that have no matching
         spot in the SpotsList:
-          "keep" -> leave the original value unchanged (default)
-          "zero" -> set intensity to 0.0 and variance to 1.0
-          "warn" -> same as keep but print a warning for each unmatched refl
+        "keep" -> leave the original value unchanged (default)
+        "zero" -> set intensity to 0.0 and variance to 1.0
+        "warn" -> same as keep but print a warning for each unmatched refl
+
     intensity_mode : "obs", "cal", "fit"
+
         If "obs" it will save the observed intensity.
         If "cal" it will save scaled kinematic intensity.
         If "fit" it will save scaled corrected intensity.
@@ -48,6 +61,7 @@ def write_spots_to_refl(
     Returns
     -------
     stats : dict
+
         Summary counts: total, matched, unmatched, skipped_exps.
 
     Notes
@@ -58,6 +72,7 @@ def write_spots_to_refl(
     this refl file, we performed ML fitting on the intensites, and now
     we want to overwrite one of the fields with the fitted data.
     """
+
     if mode not in ("sum", "prf"):
         raise ValueError(f"mode must be 'sum' or 'prf', got '{mode}'")
 

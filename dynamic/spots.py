@@ -116,6 +116,8 @@ class SpotsList:
             cif_file = '/home/marko/active/dd/data/1870980_ireloh.cif'
         elif material == 'biotin':
             cif_file = '/home/marko/active/dd/data/2083844_biotin.cif'
+        elif material == 'sulfoxide':
+            cif_file = '/home/marko/stfc/data/dd/chiral/689270_sulfoxide.cif'
         else:
             raise ValueError('Unknown material: ', material)
         self.material = material
@@ -357,15 +359,25 @@ class SpotsList:
 
         Parameters
         ----------
-        expt_file: Path or string
-            Path of the DIALS experiment file (*.expt).
-        refl_file: Path or string
-            Path of the DIALS reflection file (*.refl).
-        material: string
+
+        expt_file : Path or string
+
+            Path of the DIALS experiment file (\\*.expt).
+
+        refl_file : Path or string
+
+            Path of the DIALS reflection file (\\*.refl).
+
+        material : string
+
             Name of the material. Used to select specific cif files.
-        intensity: "prf", "sum"
+
+        intensity : "prf", "sum"
+
             Choose which intensity to read from the reflection table.
-        exp_id: integer
+
+        exp_id : integer
+
             If supplied, the function will read only spots from one
             specific experiment from the given expt and refl files.
             If not supplied, the function will read all the spots from
