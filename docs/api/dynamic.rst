@@ -49,14 +49,6 @@ dynamic.dataset module
    :undoc-members:
    :show-inheritance:
 
-dynamic.ee\_gbr module
-----------------------
-
-.. automodule:: dynamic.ee_gbr
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 dynamic.excitation\_error module
 --------------------------------
 
@@ -81,6 +73,14 @@ dynamic.image module
    :undoc-members:
    :show-inheritance:
 
+dynamic.interpolate\_angles module
+----------------------------------
+
+.. automodule:: dynamic.interpolate_angles
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 dynamic.io module
 -----------------
 
@@ -93,6 +93,14 @@ dynamic.kinematic module
 ------------------------
 
 .. automodule:: dynamic.kinematic
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+dynamic.misc module
+-------------------
+
+.. automodule:: dynamic.misc
    :members:
    :undoc-members:
    :show-inheritance:
@@ -113,6 +121,14 @@ dynamic.parsers module
    :undoc-members:
    :show-inheritance:
 
+dynamic.reciprocal\_lattice module
+----------------------------------
+
+.. automodule:: dynamic.reciprocal_lattice
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 dynamic.refl module
 -------------------
 
@@ -125,6 +141,14 @@ dynamic.spots module
 --------------------
 
 .. automodule:: dynamic.spots
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+dynamic.spots\_to\_refl module
+------------------------------
+
+.. automodule:: dynamic.spots_to_refl
    :members:
    :undoc-members:
    :show-inheritance:
