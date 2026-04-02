@@ -1,0 +1,42 @@
+
+26 Mar 2026
+===============
+
+  :Attendees: M. Petrovic, D. Waterman, D. McDonagh
+
+............
+ Results
+............
+
+1. Coded a replacement for DIALS reciprocal lattice viewer using Claude (Fig.
+   1). This is just a template; all the functionality needs to be checked and
+   tested before new features are included. Initially, the viewer was created
+   as a JavaScript web app, then wrapped into a standalone desktop app using
+   Electron, and later Tauri (much smaller in size, only a few MB compared to
+   the 100 MB Electron app). In the end, the interface was rewritten in React
+   to make future extensions easier. 
+
+2. Rewrote some parts of the AutoED paper. Very close to completing the first
+   draft. 
+
+.. list-table::
+   :widths: 33 33 33
+   :align: center
+
+   * - .. image:: ../../figs/rlv_screenshoot.png
+          :class: zoomable
+          :alt: First
+     - .. 
+     - .. 
+
+   * - Fig. 1: New reciprocal lattice viewer, created as a standalone 
+       desktop application.
+     - 
+     - 
+
+  
+............
+  Discussion
+............
+
+- Finish the first draft of the AutoED paper before the 6th of April. 
