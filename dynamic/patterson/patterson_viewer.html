@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Patterson Map Viewer</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#07070e;color:#ccc;font-family:monospace;overflow:hidden;}
+#dropzone{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:#07070e;z-index:100;transition:opacity .3s;}
+#dropzone.hidden{opacity:0;pointer-events:none;}
+#dropzone h1{font-size:22px;color:#88bbff;font-weight:400;}
+#dropzone p{font-size:13px;color:#556;max-width:340px;text-align:center;line-height:1.6;}
+#dropbox{width:320px;height:160px;border:1.5px dashed #334;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;cursor:pointer;transition:border-color .2s,background .2s;}
+#dropbox:hover,#dropbox.over{border-color:#5588ff;background:rgba(80,120,255,0.05);}
+#dropbox span{font-size:13px;color:#667;}
+#fileInput{display:none;}
+#loadBtn{font-size:12px;padding:5px 16px;background:transparent;color:#88aaff;border:0.5px solid #334;border-radius:4px;cursor:pointer;}
+#loadBtn:hover{border-color:#5588ff;color:#aaccff;}
+#status{font-size:12px;color:#556;height:16px;}
+#demoBtn{font-size:11px;padding:4px 12px;background:transparent;color:#446;border:0.5px solid #334;border-radius:4px;cursor:pointer;margin-top:4px;}
+#demoBtn:hover{color:#88aaff;border-color:#5588ff;}
+#main{position:fixed;inset:0;display:none;}
+#c3d{width:100%;height:100%;display:block;cursor:grab;}
+#plane-bar{position:absolute;top:10px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;background:rgba(7,7,20,.85);border:0.5px solid rgba(100,170,255,.4);border-radius:20px;padding:5px 14px;white-space:nowrap;z-index:20;}
+#plane-bar label{font-size:11px;color:rgba(120,190,255,.8);}
+#plane-bar input[type=range]{width:140px;cursor:pointer;}
+#plane-bar span{font-size:11px;font-weight:500;font-family:monospace;color:rgba(100,230,255,.9);min-width:32px;}
+#plane-bar select{font-size:11px;padding:1px 4px;background:#0d0d22;color:rgba(180,215,255,.85);border:0.5px solid rgba(100,150,255,.4);border-radius:3px;}
+#fileinfo{position:absolute;top:10px;left:12px;font-size:11px;color:rgba(150,180,255,.5);z-index:20;line-height:1.6;}
+#backBtn{position:absolute;top:10px;right:12px;font-size:11px;padding:4px 10px;background:transparent;color:rgba(150,180,255,.6);border:0.5px solid rgba(100,150,255,.3);border-radius:4px;cursor:pointer;z-index:20;}
+#backBtn:hover{color:#aaccff;border-color:#5588ff;}
+#pip{position:absolute;bottom:54px;right:12px;width:220px;border:1px solid rgba(100,150,255,.55);border-radius:6px;overflow:hidden;background:#07070e;z-index:15;user-select:none;}
+#pip-topbar{height:22px;background:rgba(15,20,50,.92);display:flex;align-items:center;gap:4px;padding:0 5px;cursor:move;flex-shrink:0;}
+#pip-label{font-size:10px;color:rgba(150,190,255,.7);pointer-events:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;margin:0 4px;}
+#pip-resize-handle{width:16px;height:16px;cursor:nw-resize;flex-shrink:0;display:flex;align-items:center;justify-content:center;opacity:.45;}
+#pip-resize-handle:hover{opacity:1;}
+.pip-btn{width:18px;height:18px;cursor:pointer;flex-shrink:0;opacity:.5;background:none;border:none;padding:0;display:flex;align-items:center;justify-content:center;border-radius:3px;}
+.pip-btn:hover{opacity:.9;background:rgba(255,255,255,.08);}
+.pip-btn.active{opacity:1;}
+.pip-btn.active svg *{stroke:#44ff88 !important;}
+#pip-canvas-wrap{position:relative;overflow:hidden;background:#07070e;}
+#sliceCanvas{position:absolute;top:0;left:0;display:block;}
+#pip-readout{padding:2px 6px;background:rgba(8,8,20,.95);font-size:10px;font-family:monospace;color:rgba(160,200,255,.75);display:flex;justify-content:space-between;align-items:center;border-top:0.5px solid rgba(100,150,255,.2);min-height:17px;flex-shrink:0;}
+#pip-measure-info{font-size:10px;font-family:monospace;color:rgba(80,255,140,.85);padding:2px 6px;background:rgba(8,8,20,.95);border-top:0.5px solid rgba(80,255,140,.15);display:none;flex-shrink:0;}
+#overlay{position:absolute;bottom:0;left:0;right:0;padding:6px 10px 8px;background:linear-gradient(transparent,rgba(5,5,12,.96) 28%);z-index:10;display:flex;flex-wrap:wrap;gap:5px 12px;align-items:center;}
+.cr{display:flex;align-items:center;gap:4px;}
+.cr label{font-size:11px;color:rgba(255,255,255,.4);}
+.cr span{font-size:11px;font-weight:500;min-width:28px;font-family:monospace;color:rgba(255,255,255,.65);}
+.cr input[type=range]{width:72px;cursor:pointer;}
+.cr select{font-size:11px;padding:1px 3px;background:#12122a;color:rgba(200,220,255,.8);border:0.5px solid rgba(100,150,255,.3);border-radius:3px;}
+.div{width:.5px;height:18px;background:rgba(255,255,255,.1);}
+</style>
+</head>
+<body>
+
+<div id="dropzone">
+  <h1>Patterson Map Viewer</h1>
+  <div id="dropbox">
+    <span>drag &amp; drop a .patt file here</span>
+    <button id="loadBtn" onclick="document.getElementById('fileInput').click()">or browse files</button>
+    <input type="file" id="fileInput" accept=".patt">
+  </div>
+  <p>Export .patt files from Python using <code>export_patterson.py</code></p>
+  <div id="status"></div>
+  <button id="demoBtn">load synthetic demo</button>
+</div>
+
+<div id="main">
+  <canvas id="c3d"></canvas>
+  <div id="plane-bar">
+    <label>slice</label>
+    <select id="selSliceAxis"><option value="x" selected>X</option><option value="y">Y</option><option value="z">Z</option></select>
+    <input type="range" id="sSlicePos" min="0" max="63" value="32" step="1">
+    <span id="vSlicePos">0.50</span>
+  </div>
+  <div id="fileinfo"></div>
+  <button id="backBtn" onclick="showDropzone()">load new file</button>
+  <div id="pip">
+    <div id="pip-topbar">
+      <div id="pip-resize-handle" title="resize">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1 11L11 1M1 6L6 1M1 11L6 11" stroke="white" stroke-width="1.3"/></svg>
+      </div>
+      <span id="pip-label">YZ @ x=0.50</span>
+      <button class="pip-btn" id="homeBtn" title="reset zoom &amp; pan">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <path d="M1 7L7 2L13 7" stroke="rgba(180,200,255,.75)" stroke-width="1.3" stroke-linejoin="round"/>
+          <path d="M3 6V12H6V9H8V12H11V6" stroke="rgba(180,200,255,.75)" stroke-width="1.3" stroke-linejoin="round"/>
+        </svg>
+      </button>
+      <button class="pip-btn" id="measureBtn" title="ruler — click pt1, click pt2, right-click to clear">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <rect x="0.5" y="4.5" width="13" height="5" rx="1" stroke="rgba(180,200,255,.75)" stroke-width="1.1"/>
+          <line x1="3"    y1="4.5" x2="3"    y2="9.5" stroke="rgba(180,200,255,.75)" stroke-width="1"/>
+          <line x1="5.5"  y1="4.5" x2="5.5"  y2="8"   stroke="rgba(180,200,255,.75)" stroke-width="1"/>
+          <line x1="8"    y1="4.5" x2="8"    y2="9.5"  stroke="rgba(180,200,255,.75)" stroke-width="1"/>
+          <line x1="10.5" y1="4.5" x2="10.5" y2="8"   stroke="rgba(180,200,255,.75)" stroke-width="1"/>
+        </svg>
+      </button>
+    </div>
+    <div id="pip-canvas-wrap"><canvas id="sliceCanvas"></canvas></div>
+    <div id="pip-readout"><span id="readoutXY">—</span><span id="readoutVal">—</span></div>
+    <div id="pip-measure-info"></div>
+  </div>
+  <div id="overlay">
+    <div class="cr"><label>levels</label><input type="range" id="sLvls" min="2" max="14" value="7" step="1"><span id="vLvls">7</span></div>
+    <div class="cr"><label>iso min</label><input type="range" id="sMin" min="5" max="70" value="18" step="1"><span id="vMin">18%</span></div>
+    <div class="cr"><label>iso max</label><input type="range" id="sMax" min="30" max="98" value="88" step="1"><span id="vMax">88%</span></div>
+    <div class="cr"><label>n slices</label><input type="range" id="sSlices" min="4" max="48" value="20" step="1"><span id="vSlices">20</span></div>
+    <div class="cr"><label>opacity</label><input type="range" id="sOpa" min="10" max="100" value="72" step="1"><span id="vOpa">72%</span></div>
+    <div class="div"></div>
+    <div class="cr"><label>stack</label>
+      <select id="selAxis"><option value="z">Z</option><option value="x">X</option><option value="zx" selected>Z+X</option></select>
+    </div>
+    <div class="cr"><label>plane</label><input type="checkbox" id="chkPlane" checked></div>
+    <div class="cr"><label>spin</label><input type="checkbox" id="chkRot" checked></div>
+    <div class="cr"><label>pip size</label><input type="range" id="sPip" min="100" max="500" value="220" step="10"><span id="vPip">220</span></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+'use strict';
+// ── File loading ──────────────────────────────────────────────────────────
+let volumeData=null,volNX=0,volNY=0,volNZ=0,volLabel='';
+function parsePatt(buffer){
+  const dv=new DataView(buffer);
+
+  // const hdrLen=dv.getUint32(0,true);
+  // const hdr=new TextDecoder().decode(new Uint8Array(buffer,4,hdrLen)).trim().split('\n');
+const hdrLen = dv.getUint32(0,true);
+const hdr = new TextDecoder().decode(
+    new Uint8Array(buffer,4,hdrLen)
+).trim().split('\n');
+
+  if(hdr[0].trim()!=='PATT1')throw new Error('Not a valid .patt file');
+  const[nx,ny,nz]=hdr[1].trim().split(' ').map(Number);
+  return{data:new Float32Array(new Float32Array(buffer,4+hdrLen,nx*ny*nz)),nx,ny,nz,label:hdr[2]?.trim()||'unknown'};
+}
+function loadBuffer(buffer,filename){
+  try{
+    const r=parsePatt(buffer);
+    volumeData=r.data;volNX=r.nx;volNY=r.ny;volNZ=r.nz;volLabel=r.label;
+    document.getElementById('fileinfo').textContent=`${filename}  |  ${volNX}×${volNY}×${volNZ}  |  ${volLabel}`;
+    const sl=document.getElementById('sSlicePos');sl.max=volNX-1;sl.value=Math.floor(volNX/2);
+    showViewer();buildContours();
+  }catch(e){document.getElementById('status').textContent='Error: '+e.message;}
+}
+function showDropzone(){document.getElementById('dropzone').classList.remove('hidden');document.getElementById('main').style.display='none';}
+function showViewer(){document.getElementById('dropzone').classList.add('hidden');document.getElementById('main').style.display='block';resizeR();}
+const dropzone=document.getElementById('dropzone'),dropbox=document.getElementById('dropbox');
+['dragover','dragenter'].forEach(ev=>dropzone.addEventListener(ev,e=>{e.preventDefault();dropbox.classList.add('over');}));
+['dragleave','dragend'].forEach(ev=>dropzone.addEventListener(ev,()=>dropbox.classList.remove('over')));
+dropzone.addEventListener('drop',e=>{e.preventDefault();dropbox.classList.remove('over');const f=e.dataTransfer.files[0];if(!f)return;document.getElementById('status').textContent='Loading '+f.name+'...';f.arrayBuffer().then(buf=>loadBuffer(buf,f.name));});
+document.getElementById('fileInput').addEventListener('change',function(){const f=this.files[0];if(!f)return;f.arrayBuffer().then(buf=>loadBuffer(buf,f.name));});
+document.getElementById('demoBtn').onclick=function(){
+  const N=48;const data=new Float32Array(N*N*N);
+  function dvi(i,j,k){return k*N*N+j*N+i;}
+  function gauss(cx,cy,cz,s,amp){for(let i=0;i<N;i++)for(let j=0;j<N;j++)for(let k=0;k<N;k++){const dx=i/N-cx,dy=j/N-cy,dz=k/N-cz;data[dvi(i,j,k)]+=amp*Math.exp(-(dx*dx+dy*dy+dz*dz)/(2*s*s));}}
+  [[.5,.5,.5,.07,1],[.63,.57,.53,.04,.55],[.37,.43,.47,.04,.55],[.55,.38,.61,.035,.40],[.45,.62,.39,.035,.40],[.70,.51,.43,.03,.28],[.30,.49,.57,.03,.28],[.58,.66,.35,.028,.22],[.42,.34,.65,.028,.22]].forEach(p=>gauss(...p));
+  let mx=-1e9,mn=1e9;for(let n=0;n<data.length;n++){mx=Math.max(mx,data[n]);mn=Math.min(mn,data[n]);}
+  const r=mx-mn;for(let n=0;n<data.length;n++)data[n]=(data[n]-mn)/r;
+  volumeData=data;volNX=volNY=volNZ=N;volLabel='synthetic demo';
+  document.getElementById('fileinfo').textContent=`demo  |  ${N}×${N}×${N}  |  synthetic`;
+  const sl=document.getElementById('sSlicePos');sl.max=N-1;sl.value=Math.floor(N/2);
+  showViewer();buildContours();
+};
+
+// ── Volume ────────────────────────────────────────────────────────────────
+function vget(i,j,k){return volumeData?volumeData[k*volNY*volNX+j*volNX+i]||0:0;}
+function extractSlice(ax,s){
+  let A,B;
+  if(ax==='x'){A=volNY;B=volNZ;}else if(ax==='y'){A=volNX;B=volNZ;}else{A=volNX;B=volNY;}
+  const out=new Float32Array(A*B);
+  for(let a=0;a<A;a++)for(let b=0;b<B;b++){
+    if(ax==='x')out[a*B+b]=vget(s,a,b);else if(ax==='y')out[a*B+b]=vget(a,s,b);else out[a*B+b]=vget(a,b,s);
+  }
+  return{data:out,na:A,nb:B};
+}
+function sliceTo3D(ax,sf,f1,f2){const h=f1-.5,v=f2-.5,p=sf-.5;if(ax==='x')return new THREE.Vector3(p,h,v);if(ax==='y')return new THREE.Vector3(h,p,v);return new THREE.Vector3(h,v,p);}
+
+// ── Marching squares ──────────────────────────────────────────────────────
+function marchingSquares(grid,nx,ny,thr){
+  function lerp(v0,v1,p0,p1){return p0+(p1-p0)*Math.max(0,Math.min(1,(thr-v0)/((v1-v0)||1e-9)));}
+  const segs=[];
+  for(let i=0;i<nx-1;i++)for(let j=0;j<ny-1;j++){
+    const v00=grid[i*ny+j],v10=grid[(i+1)*ny+j],v01=grid[i*ny+j+1],v11=grid[(i+1)*ny+j+1];
+    let ci=0;if(v00>=thr)ci|=1;if(v10>=thr)ci|=2;if(v11>=thr)ci|=4;if(v01>=thr)ci|=8;
+    if(ci===0||ci===15)continue;
+    const fi=i/(nx-1),fi1=(i+1)/(nx-1),fj=j/(ny-1),fj1=(j+1)/(ny-1);
+    const eB=[lerp(v00,v10,fi,fi1),fj],eT=[lerp(v01,v11,fi,fi1),fj1];
+    const eL=[fi,lerp(v00,v01,fj,fj1)],eR=[fi1,lerp(v10,v11,fj,fj1)];
+    const lut={1:[[eB,eL]],2:[[eB,eR]],3:[[eL,eR]],4:[[eT,eR]],5:[[eB,eL],[eT,eR]],6:[[eB,eT]],7:[[eT,eL]],8:[[eT,eL]],9:[[eB,eT]],10:[[eB,eR],[eT,eL]],11:[[eT,eR]],12:[[eL,eR]],13:[[eB,eR]],14:[[eB,eL]]};
+    for(const[a,b]of(lut[ci]||[]))segs.push([a[0],a[1],b[0],b[1]]);
+  }
+  return segs;
+}
+
+// ── Colour ────────────────────────────────────────────────────────────────
+function levelColorThree(t){if(t<.25){const s=t/.25;return new THREE.Color(.15,.35+s*.45,1);}if(t<.5){const s=(t-.25)/.25;return new THREE.Color(.15,.8,1-s*.8);}if(t<.75){const s=(t-.5)/.25;return new THREE.Color(.15+s*.85,.8-s*.3,.2);}const s=(t-.75)/.25;return new THREE.Color(1,.5-s*.35,.2-s*.15);}
+function levelColorCSS(t){const c=levelColorThree(t);return`rgb(${c.r*255|0},${c.g*255|0},${c.b*255|0})`;}
+function hotRGB(t){return[Math.min(255,t*2.5*255|0),Math.max(0,Math.min(255,(t-.4)*2.5*255|0)),Math.max(0,Math.min(255,(t-.7)*3.3*255|0))];}
+
+// ── Label helper ──────────────────────────────────────────────────────────
+function drawLabel(ctx,text,x,y,opts){
+  const fs=opts.fontSize||10;ctx.font=`${fs}px monospace`;
+  const pad=3,tw=ctx.measureText(text).width,bw=tw+pad*2,bh=fs+pad*2;
+  const ox=opts.offsetX||0,oy=opts.offsetY||0;
+  let bx=x+ox,by=y+oy-bh;
+  if(opts.align==='right')bx=x+ox-bw;if(opts.align==='center')bx=x+ox-bw/2;
+  const W=ctx.canvas.width,H=ctx.canvas.height;
+  bx=Math.max(1,Math.min(W-bw-1,bx));by=Math.max(1,Math.min(H-bh-1,by));
+  ctx.fillStyle='rgba(0,0,0,0.75)';
+  ctx.beginPath();const r=3;
+  ctx.moveTo(bx+r,by);ctx.lineTo(bx+bw-r,by);ctx.quadraticCurveTo(bx+bw,by,bx+bw,by+r);ctx.lineTo(bx+bw,by+bh-r);ctx.quadraticCurveTo(bx+bw,by+bh,bx+bw-r,by+bh);ctx.lineTo(bx+r,by+bh);ctx.quadraticCurveTo(bx,by+bh,bx,by+bh-r);ctx.lineTo(bx,by+r);ctx.quadraticCurveTo(bx,by,bx+r,by);ctx.closePath();
+  ctx.fill();ctx.strokeStyle='rgba(68,255,136,.35)';ctx.lineWidth=.7;ctx.stroke();
+  ctx.fillStyle='#44ff88';ctx.fillText(text,bx+pad,by+pad+fs-1);
+}
+
+// ── Three.js ──────────────────────────────────────────────────────────────
+const c3d=document.getElementById('c3d');
+const renderer=new THREE.WebGLRenderer({canvas:c3d,antialias:true,alpha:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+const scene=new THREE.Scene();
+const cam=new THREE.PerspectiveCamera(42,2,.01,100);
+cam.position.set(0,0,2.8);cam.lookAt(0,0,0);
+function resizeR(){const W=window.innerWidth,H=window.innerHeight;renderer.setSize(W,H);cam.aspect=W/H;cam.updateProjectionMatrix();}
+window.addEventListener('resize',()=>{resizeR();redrawSlice2D();});
+scene.add(new THREE.AmbientLight(0xffffff,1.0));
+const pivot=new THREE.Group();scene.add(pivot);
+pivot.add(new THREE.Mesh(new THREE.BoxGeometry(1,1,1),new THREE.MeshBasicMaterial({color:0x223344,wireframe:true,transparent:true,opacity:.18})));
+[[1,0,0,0xff3355],[0,1,0,0x33dd66],[0,0,1,0x3388ff]].forEach(([x,y,z,c])=>{const g=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-.5,-.5,-.5),new THREE.Vector3(-.5+x*.65,-.5+y*.65,-.5+z*.65)]);pivot.add(new THREE.Line(g,new THREE.LineBasicMaterial({color:c,transparent:true,opacity:.55})));});
+const planeGroup=new THREE.Group();
+planeGroup.add(new THREE.Mesh(new THREE.PlaneGeometry(1,1),new THREE.MeshBasicMaterial({color:0x88aaff,transparent:true,opacity:.08,side:THREE.DoubleSide,depthWrite:false})));
+const bpts2=[new THREE.Vector3(-.5,-.5,0),new THREE.Vector3(.5,-.5,0),new THREE.Vector3(.5,.5,0),new THREE.Vector3(-.5,.5,0),new THREE.Vector3(-.5,-.5,0)];
+planeGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(bpts2),new THREE.LineBasicMaterial({color:0x88ccff,transparent:true,opacity:.6})));
+pivot.add(planeGroup);
+function updatePlane3D(){
+  const ax=document.getElementById('selSliceAxis').value;
+  const s=parseInt(document.getElementById('sSlicePos').value);
+  const Ns=ax==='x'?volNX:ax==='y'?volNY:volNZ;
+  const pos=Ns>1?s/(Ns-1)-.5:0;
+  planeGroup.rotation.set(0,0,0);planeGroup.position.set(0,0,0);
+  if(ax==='x'){planeGroup.rotation.y=Math.PI/2;planeGroup.position.x=pos;}
+  else if(ax==='y'){planeGroup.rotation.x=Math.PI/2;planeGroup.position.y=pos;}
+  else{planeGroup.position.z=pos;}
+  planeGroup.visible=document.getElementById('chkPlane').checked;
+  const axNames={x:'YZ',y:'XZ',z:'XY'};
+  document.getElementById('pip-label').textContent=`${axNames[ax]} @ ${ax}=${(pos+.5).toFixed(2)}`;
+}
+let contourGroup=null,intersectGroup=null,globalOpacity=.72;
+function buildContours(){
+  if(!volumeData)return;
+  if(contourGroup){pivot.remove(contourGroup);contourGroup.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material)o.material.dispose();});}
+  if(intersectGroup){pivot.remove(intersectGroup);intersectGroup.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material)o.material.dispose();});}
+  contourGroup=new THREE.Group();intersectGroup=new THREE.Group();
+  const nLvls=parseInt(document.getElementById('sLvls').value);
+  const tMin=parseInt(document.getElementById('sMin').value)/100;
+  const tMax=parseInt(document.getElementById('sMax').value)/100;
+  const nSlices=parseInt(document.getElementById('sSlices').value);
+  const stackAxis=document.getElementById('selAxis').value;
+  const sliceAx=document.getElementById('selSliceAxis').value;
+  const sliceIdx=parseInt(document.getElementById('sSlicePos').value);
+  const levels=[];for(let l=0;l<nLvls;l++)levels.push(tMin+(tMax-tMin)*(l/(nLvls-1||1)));
+  function addStack(sAxis){
+    const Ns=sAxis==='x'?volNX:sAxis==='y'?volNY:volNZ;
+    for(let si=0;si<nSlices;si++){
+      const s=Math.round(si/(nSlices-1||1)*(Ns-1));
+      const frac=Ns>1?s/(Ns-1):0;
+      const isIntersect=(sAxis===sliceAx&&s===sliceIdx);
+      const{data:sl,na,nb}=extractSlice(sAxis,s);
+      for(let li=0;li<levels.length;li++){
+        const thr=levels[li],t=li/(levels.length-1||1);
+        const segs=marchingSquares(sl,na,nb,thr);if(!segs.length)continue;
+        const pts=[];for(const[x1,y1,x2,y2]of segs){pts.push(sliceTo3D(sAxis,frac,x1,y1));pts.push(sliceTo3D(sAxis,frac,x2,y2));}
+        const geo=new THREE.BufferGeometry().setFromPoints(pts);
+        const col=levelColorThree(t);
+        if(isIntersect){const bc=new THREE.Color(Math.min(1,col.r*.3+.8),Math.min(1,col.g*.3+.8),Math.min(1,col.b*.3+.8));intersectGroup.add(new THREE.LineSegments(geo,new THREE.LineBasicMaterial({color:bc,transparent:false,depthTest:false})));}
+        else{contourGroup.add(new THREE.LineSegments(geo,new THREE.LineBasicMaterial({color:col,transparent:true,opacity:globalOpacity})));}
+      }
+    }
+  }
+  if(stackAxis==='z'||stackAxis==='zx')addStack('z');
+  if(stackAxis==='x'||stackAxis==='zx')addStack('x');
+  const Ns2=sliceAx==='x'?volNX:sliceAx==='y'?volNY:volNZ;
+  const frac2=Ns2>1?sliceIdx/(Ns2-1):0;
+  const{data:iSl,na:iNa,nb:iNb}=extractSlice(sliceAx,sliceIdx);
+  for(let li=0;li<levels.length;li++){
+    const thr=levels[li],t=li/(levels.length-1||1);
+    const segs=marchingSquares(iSl,iNa,iNb,thr);if(!segs.length)continue;
+    const pts=[];for(const[x1,y1,x2,y2]of segs){pts.push(sliceTo3D(sliceAx,frac2,x1,y1));pts.push(sliceTo3D(sliceAx,frac2,x2,y2));}
+    const col=levelColorThree(t);
+    const bc=new THREE.Color(Math.min(1,col.r*.2+.85),Math.min(1,col.g*.2+.85),Math.min(1,col.b*.2+.85));
+    intersectGroup.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color:bc,transparent:false,depthTest:false})));
+  }
+  pivot.add(contourGroup);pivot.add(intersectGroup);
+  updatePlane3D();redrawSlice2D();
+}
+
+// ── 2D state ──────────────────────────────────────────────────────────────
+let zoom2d=1,pan2dx=0,pan2dy=0,currentSlice=null;
+// Ruler: 0=idle, 1=waiting for P2, 2=complete
+let measureMode=false,measState=0,measP1=null,measP2=null,measLive=null;
+let panDragging=false,panStart={x:0,y:0},panOrigin={x:0,y:0};
+let rightDragging=false,rightStart={x:0,y:0},rightOrigin={x:0,y:0};
+
+function resetZoomPan(){zoom2d=1;pan2dx=0;pan2dy=0;redrawSlice2D();}
+function canvasToFrac(e){
+  const wrap=document.getElementById('pip-canvas-wrap'),r=wrap.getBoundingClientRect(),W=wrap.clientWidth;
+  return{fx:Math.max(0,Math.min(1,(e.clientX-r.left-pan2dx)/(W*zoom2d))),fy:Math.max(0,Math.min(1,(e.clientY-r.top-pan2dy)/(W*zoom2d)))};
+}
+function canvasPx(e){const wrap=document.getElementById('pip-canvas-wrap'),r=wrap.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top};}
+function fracToPx(f,N){return Math.min(N-1,Math.max(0,Math.round(f*(N-1))));}
+
+function redrawSlice2D(){
+  if(!volumeData)return;
+  const cv=document.getElementById('sliceCanvas'),wrap=document.getElementById('pip-canvas-wrap');
+  const W=wrap.clientWidth;if(!W)return;
+  cv.width=W;cv.height=W;cv.style.width=W+'px';cv.style.height=W+'px';
+  const ctx=cv.getContext('2d');
+  const ax=document.getElementById('selSliceAxis').value;
+  const s=parseInt(document.getElementById('sSlicePos').value);
+  const{data:sl,na,nb}=extractSlice(ax,s);
+  currentSlice={data:sl,na,nb};
+  ctx.save();ctx.translate(pan2dx,pan2dy);ctx.scale(zoom2d,zoom2d);
+  const tw=W/na+1,th=W/nb+1;
+  for(let i=0;i<na;i++)for(let j=0;j<nb;j++){const[r,g,b]=hotRGB(sl[i*nb+j]);ctx.fillStyle=`rgb(${r},${g},${b})`;ctx.fillRect(i/na*W,j/nb*W,tw,th);}
+  const nLvls=parseInt(document.getElementById('sLvls').value);
+  const tMin=parseInt(document.getElementById('sMin').value)/100;
+  const tMax=parseInt(document.getElementById('sMax').value)/100;
+  for(let li=0;li<nLvls;li++){
+    const thr=tMin+(tMax-tMin)*(li/(nLvls-1||1)),t=li/(nLvls-1||1);
+    ctx.strokeStyle=levelColorCSS(t);ctx.lineWidth=1.5/zoom2d;ctx.beginPath();
+    for(const[x1,y1,x2,y2]of marchingSquares(sl,na,nb,thr)){ctx.moveTo(x1*W,y1*W);ctx.lineTo(x2*W,y2*W);}
+    ctx.stroke();
+  }
+  ctx.restore();
+  // axis labels
+  ctx.fillStyle='rgba(255,255,255,.35)';ctx.font='10px monospace';
+  const axLbls={x:['Y','Z'],y:['X','Z'],z:['X','Y']};const[la,lb]=axLbls[ax];
+  ctx.fillText(la+'→',W-22,W-4);ctx.fillText(lb+'↓',3,12);
+
+  // measure overlay
+  const toS=f=>({x:f.fx*W*zoom2d+pan2dx,y:f.fy*W*zoom2d+pan2dy});
+  if(measP1){
+    const ss=toS(measP1);
+    const p1i=fracToPx(measP1.fx,na),p1j=fracToPx(measP1.fy,nb);
+    ctx.fillStyle='#44ff88';ctx.beginPath();ctx.arc(ss.x,ss.y,3.5,0,Math.PI*2);ctx.fill();
+    drawLabel(ctx,`(${p1i},${p1j})`,ss.x,ss.y,{offsetX:-6,offsetY:-2,align:'right',fontSize:9});
+    const endF=measP2||measLive;
+    if(endF){
+      const se=toS(endF);
+      const p2i=fracToPx(endF.fx,na),p2j=fracToPx(endF.fy,nb);
+      const di=p2i-p1i,dj=p2j-p1j,pxD=Math.sqrt(di*di+dj*dj);
+      ctx.strokeStyle='#44ff88';ctx.lineWidth=1.8;ctx.setLineDash([5,3]);
+      ctx.beginPath();ctx.moveTo(ss.x,ss.y);ctx.lineTo(se.x,se.y);ctx.stroke();ctx.setLineDash([]);
+      ctx.fillStyle='#44ff88';ctx.beginPath();ctx.arc(se.x,se.y,3.5,0,Math.PI*2);ctx.fill();
+      const ex_off=se.x>=ss.x?8:-8,ey_off=se.y>=ss.y?14:-6;
+      drawLabel(ctx,`(${p2i},${p2j})`,se.x,se.y,{offsetX:ex_off,offsetY:ey_off,fontSize:9});
+      const mx=(ss.x+se.x)/2,my=(ss.y+se.y)/2;
+      const lx=se.x-ss.x,ly=se.y-ss.y,ll=Math.sqrt(lx*lx+ly*ly)||1;
+      drawLabel(ctx,`${pxD.toFixed(1)} px`,mx,my,{offsetX:-ly/ll*16,offsetY:lx/ll*16+10,align:'center',fontSize:10});
+      document.getElementById('pip-measure-info').style.display='block';
+      document.getElementById('pip-measure-info').textContent=`(${p1i},${p1j})→(${p2i},${p2j})  ${pxD.toFixed(1)} px`;
+    }
+    // waiting ring
+    if(measState===1&&!measLive){ctx.strokeStyle='rgba(68,255,136,.35)';ctx.lineWidth=1;ctx.beginPath();ctx.arc(ss.x,ss.y,8,0,Math.PI*2);ctx.stroke();}
+  }
+}
+
+const wrap=document.getElementById('pip-canvas-wrap');
+wrap.addEventListener('mousemove',e=>{
+  if(!volumeData)return;
+  const{fx,fy}=canvasToFrac(e);
+  if(currentSlice){
+    const gi=Math.min(currentSlice.na-1,Math.floor(fx*(currentSlice.na-1)));
+    const gj=Math.min(currentSlice.nb-1,Math.floor(fy*(currentSlice.nb-1)));
+    const v=currentSlice.data[gi*currentSlice.nb+gj];
+    document.getElementById('readoutXY').textContent=`(${gi},${gj})`;
+    document.getElementById('readoutVal').textContent=`ρ=${v.toFixed(3)}`;
+  }
+  if(measureMode&&measState===1&&measP1){measLive=canvasToFrac(e);redrawSlice2D();}
+  if(panDragging&&!measureMode){const px=canvasPx(e);pan2dx=panOrigin.x+(px.x-panStart.x);pan2dy=panOrigin.y+(px.y-panStart.y);redrawSlice2D();}
+  if(rightDragging){const px=canvasPx(e);pan2dx=rightOrigin.x+(px.x-rightStart.x);pan2dy=rightOrigin.y+(px.y-rightStart.y);redrawSlice2D();}
+});
+wrap.addEventListener('mouseleave',()=>{
+  document.getElementById('readoutXY').textContent='—';document.getElementById('readoutVal').textContent='—';
+  if(measureMode&&measState===1){measLive=null;redrawSlice2D();}
+});
+wrap.addEventListener('wheel',e=>{
+  e.preventDefault();e.stopPropagation();
+  const r=wrap.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
+  const factor=e.deltaY<0?1.15:1/1.15,newZoom=Math.max(.4,Math.min(20,zoom2d*factor));
+  pan2dx=mx-(mx-pan2dx)*newZoom/zoom2d;pan2dy=my-(my-pan2dy)*newZoom/zoom2d;zoom2d=newZoom;redrawSlice2D();
+},{passive:false});
+wrap.addEventListener('mousedown',e=>{
+  e.stopPropagation();const px=canvasPx(e);
+  if(e.button===0){
+    if(measureMode){
+      if(measState===0||measState===2){measP1=canvasToFrac(e);measP2=null;measLive=null;measState=1;document.getElementById('pip-measure-info').style.display='none';redrawSlice2D();}
+      else if(measState===1){measP2=canvasToFrac(e);measLive=null;measState=2;redrawSlice2D();}
+    }else{panDragging=true;panStart={x:px.x,y:px.y};panOrigin={x:pan2dx,y:pan2dy};}
+  }
+  if(e.button===2){rightDragging=true;rightStart={x:px.x,y:px.y};rightOrigin={x:pan2dx,y:pan2dy};e.preventDefault();}
+});
+window.addEventListener('mouseup',e=>{if(e.button===0)panDragging=false;if(e.button===2)rightDragging=false;});
+wrap.addEventListener('contextmenu',e=>{
+  e.preventDefault();
+  if(measureMode){measP1=null;measP2=null;measLive=null;measState=0;document.getElementById('pip-measure-info').style.display='none';redrawSlice2D();}
+});
+document.getElementById('homeBtn').onclick=resetZoomPan;
+document.getElementById('measureBtn').onclick=function(){
+  measureMode=!measureMode;this.classList.toggle('active',measureMode);wrap.style.cursor=measureMode?'crosshair':'default';
+  if(!measureMode){measP1=null;measP2=null;measLive=null;measState=0;document.getElementById('pip-measure-info').style.display='none';redrawSlice2D();}
+};
+
+// ── PiP drag & resize ─────────────────────────────────────────────────────
+const pip=document.getElementById('pip'),topbar=document.getElementById('pip-topbar'),resHandle=document.getElementById('pip-resize-handle');
+let pipMove=false,pipRes=false,pmx=0,pmy=0,pox=0,poy=0,prw=0,pright=0,pbottom=0;
+topbar.addEventListener('mousedown',e=>{if(resHandle.contains(e.target)||e.target.closest('.pip-btn'))return;pipMove=true;pmx=e.clientX;pmy=e.clientY;pox=pip.offsetLeft;poy=pip.offsetTop;e.preventDefault();e.stopPropagation();});
+resHandle.addEventListener('mousedown',e=>{pipRes=true;pmx=e.clientX;pmy=e.clientY;prw=pip.offsetWidth;pright=pip.offsetLeft+pip.offsetWidth;pbottom=pip.offsetTop+pip.offsetHeight;e.preventDefault();e.stopPropagation();});
+window.addEventListener('mousemove',e=>{
+  if(pipMove){const maxL=window.innerWidth-pip.offsetWidth-4,maxT=window.innerHeight-pip.offsetHeight-4;pip.style.left=Math.max(0,Math.min(maxL,pox+(e.clientX-pmx)))+'px';pip.style.top=Math.max(0,Math.min(maxT,poy+(e.clientY-pmy)))+'px';pip.style.right='auto';pip.style.bottom='auto';}
+  if(pipRes){const nw=Math.max(100,Math.min(500,prw-(e.clientX-pmx)));pip.style.left=Math.max(0,pright-nw)+'px';pip.style.top=Math.max(0,pbottom-nw)+'px';pip.style.right='auto';pip.style.bottom='auto';pip.style.width=nw+'px';document.getElementById('pip-canvas-wrap').style.height=nw+'px';document.getElementById('sPip').value=nw;document.getElementById('vPip').textContent=nw;redrawSlice2D();}
+});
+window.addEventListener('mouseup',()=>{pipMove=false;pipRes=false;});
+document.getElementById('sPip').oninput=function(){const s=+this.value;pip.style.width=s+'px';document.getElementById('pip-canvas-wrap').style.height=s+'px';document.getElementById('vPip').textContent=s;redrawSlice2D();};
+document.getElementById('pip-canvas-wrap').style.height='220px';
+
+// ── Trackball ─────────────────────────────────────────────────────────────
+function projectOnSphere(x,y,W,H){const nx=(2*x-W)/Math.min(W,H),ny=-(2*y-H)/Math.min(W,H);const d=Math.sqrt(nx*nx+ny*ny);const nz=d<=1/Math.SQRT2?Math.sqrt(1-d*d):1/(2*d);const len=Math.sqrt(nx*nx+ny*ny+nz*nz);return new THREE.Vector3(nx/len,ny/len,nz/len);}
+let isDrag=false,lastSph=null,autoRot=true;
+const autoQ=new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),.004);
+c3d.addEventListener('mousedown',e=>{if(pip.contains(e.target))return;isDrag=true;autoRot=false;document.getElementById('chkRot').checked=false;const r=c3d.getBoundingClientRect();lastSph=projectOnSphere(e.clientX-r.left,e.clientY-r.top,r.width,r.height);c3d.style.cursor='grabbing';});
+window.addEventListener('mouseup',()=>{isDrag=false;c3d.style.cursor='grab';});
+window.addEventListener('mousemove',e=>{if(!isDrag||!lastSph||pipMove||pipRes||panDragging||rightDragging)return;const r=c3d.getBoundingClientRect();const cur=projectOnSphere(e.clientX-r.left,e.clientY-r.top,r.width,r.height);const axis=new THREE.Vector3().crossVectors(lastSph,cur);const dot=Math.max(-1,Math.min(1,lastSph.dot(cur)));if(axis.lengthSq()>1e-10)pivot.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(axis.normalize(),Math.acos(dot)*2.5));lastSph=cur;});
+c3d.addEventListener('wheel',e=>{cam.position.z=Math.max(.8,Math.min(7,cam.position.z+e.deltaY*.003));e.preventDefault();},{passive:false});
+function animate(){requestAnimationFrame(animate);if(autoRot)pivot.quaternion.premultiply(autoQ);renderer.render(scene,cam);}
+animate();
+
+// ── Bindings ──────────────────────────────────────────────────────────────
+document.getElementById('chkRot').onchange=function(){autoRot=this.checked;};
+document.getElementById('chkPlane').onchange=updatePlane3D;
+function bind(id,valId,suffix,fn){document.getElementById(id).oninput=function(){document.getElementById(valId).textContent=this.value+suffix;fn();};}
+bind('sLvls','vLvls','',buildContours);bind('sMin','vMin','%',buildContours);bind('sMax','vMax','%',buildContours);bind('sSlices','vSlices','',buildContours);
+bind('sOpa','vOpa','%',()=>{globalOpacity=parseInt(document.getElementById('sOpa').value)/100;if(contourGroup)contourGroup.traverse(o=>{if(o.material)o.material.opacity=globalOpacity;});});
+document.getElementById('selAxis').onchange=buildContours;
+document.getElementById('sSlicePos').oninput=function(){
+  const ax=document.getElementById('selSliceAxis').value,Ns=ax==='x'?volNX:ax==='y'?volNY:volNZ;
+  document.getElementById('vSlicePos').textContent=(+this.value/(Ns-1)).toFixed(2);
+  updatePlane3D();buildContours();
+};
+document.getElementById('selSliceAxis').onchange=function(){
+  const ax=this.value,Ns=ax==='x'?volNX:ax==='y'?volNY:volNZ;
+  const sl=document.getElementById('sSlicePos');sl.max=Ns-1;sl.value=Math.floor(Ns/2);
+  document.getElementById('vSlicePos').textContent=(.5).toFixed(2);
+  resetZoomPan();updatePlane3D();buildContours();
+};
+</script>
+</body>
+</html>
