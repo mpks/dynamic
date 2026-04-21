@@ -1,393 +1,570 @@
 """
 patterson_cnn.py
 
-CNN that learns to predict the deformation function between
-observed and calculated Patterson maps.
+3D residual filter CNN that learns to correct observed Patterson maps
+(dynamically distorted) towards kinematic (calculated) Patterson maps.
 
-Architecture:
-    - Input:  observed Patterson map (N x N) + conditioning vector
-    - Output: corrected Patterson map (N x N)
-    - The network learns: Patterson_obs → Patterson_cal
+Architecture: 3D patch-based residual network
+  - Operates on small 3D patches extracted from .patt volumes
+  - No downsampling — acts as a pure spatial filter
+  - Residual learning: network predicts the CORRECTION (obs - cal),
+    not the full map. At init (weights≈0) → identity transform.
+  - Patch-based training gives many samples per dataset → transferable
 
-The conditioning vector encodes dataset-level properties
-(CV, dynamic range, mean I/sigma etc.) so the network knows
-how strong the dynamical effects are.
+Data flow:
+  Training:
+    obs.patt + cal.patt  →  extract patches  →  train network
+    target = obs_patch - cal_patch  (the distortion to remove)
+    loss = Patterson-space loss + reciprocal-space loss (R-factor)
 
-Training pairs: (Patterson_obs, Patterson_cal) from known structures.
-At inference: feed Patterson_obs from new dataset → get corrected map
-→ back-transform to get corrected |F_hkl|.
+  Inference:
+    obs.patt  →  sliding-window correction  →  corrected.patt
+    corrected.patt  →  3D FFT  →  corrected |F_hkl|²
+    →  R1 evaluation and Fc vs Fo_corrected plot
+
+Usage:
+    from patterson_cnn import PattersonFilterCNN, PattersonTrainer
+    from patterson_cnn import PattersonPatchDataset, correct_volume
+    from patterson_cnn import back_transform_3d, evaluate_correction
+
+    # Training
+    dataset = PattersonPatchDataset.from_patt_pairs(
+        [('obs1.patt', 'cal1.patt'), ('obs2.patt', 'cal2.patt')],
+        patch_size=16, stride=4
+    )
+    train_ds, val_ds = dataset.split(val_fraction=0.15)
+    model = PattersonFilterCNN(patch_size=16, base_ch=32, n_blocks=8)
+    trainer = PattersonTrainer(model)
+    trainer.train(train_ds, val_ds, n_epochs=100)
+
+    # Inference
+    corrected_map = correct_volume('new_obs.patt', model)
+    hkl_corrections = back_transform_3d(corrected_map, spots_list)
+    evaluate_correction(hkl_corrections, spots_list)
 """
 
+import struct
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
-from typing import List, Tuple, Optional
+from dataclasses import dataclass
+from typing import List, Tuple, Optional, Dict
+from pathlib import Path
 import matplotlib.pyplot as plt
-from patterson import PattersonMap, compute_dataset_conditioning
 
 
-# -----------------------------------------------------------------------
-# Dataset
-# -----------------------------------------------------------------------
+# ── .patt file I/O ──────────────────────────────────────────────────────────
 
-class PattersonDataset(Dataset):
+def read_patt(path: str) -> Tuple[np.ndarray, str]:
+    """Read a .patt file. Returns (grid, label) where grid is (nx,ny,nz) float32."""
+    with open(path, 'rb') as f:
+        buf = f.read()
+    hdr_len = struct.unpack_from('<I', buf, 0)[0]
+    hdr = buf[4:4+hdr_len].decode('ascii').strip().split('\n')
+    if hdr[0].strip() != 'PATT1':
+        raise ValueError(f"{path}: not a valid .patt file")
+    nx, ny, nz = map(int, hdr[1].strip().split())
+    label = hdr[2].strip() if len(hdr) > 2 else 'unknown'
+    data = np.frombuffer(buf, dtype='<f4', offset=4+hdr_len,
+                         count=nx*ny*nz).copy().reshape(nx, ny, nz)
+    return data, label
+
+
+def write_patt(grid: np.ndarray, path: str, label: str = 'corrected') -> None:
+    """Write a .patt file from (nx,ny,nz) float32 array."""
+    nx, ny, nz = grid.shape
+    header = f"PATT1\n{nx} {ny} {nz}\n{label}\n".encode('ascii')
+    pad = (-(4 + len(header))) % 4
+    header += b'\x00' * pad
+    with open(path, 'wb') as f:
+        f.write(struct.pack('<I', len(header)))
+        f.write(header)
+        f.write(grid.astype('<f4').tobytes())
+
+
+# ── Data container ───────────────────────────────────────────────────────────
+
+@dataclass
+class PattPair:
     """
-    PyTorch Dataset wrapping a list of PattersonMap objects.
+    One (obs, cal) Patterson map pair from a single dataset.
+    obs and cal are (nx, ny, nz) float32 arrays, normalised to [0,1].
+    dataset_id is a string label for bookkeeping.
+    """
+    obs:        np.ndarray   # (nx, ny, nz) observed Patterson
+    cal:        np.ndarray   # (nx, ny, nz) calculated (kinematic) Patterson
+    dataset_id: str
 
-    Each sample is:
-        x : (1, N, N) tensor  — normalised observed Patterson map
-        c : (C,)     tensor  — conditioning vector
-        y : (1, N, N) tensor  — normalised calculated Patterson map (target)
+    @classmethod
+    def from_patt_files(cls, obs_path: str, cal_path: str) -> 'PattPair':
+        obs, lbl_obs = read_patt(obs_path)
+        cal, lbl_cal = read_patt(cal_path)
+        if obs.shape != cal.shape:
+            raise ValueError(
+                f"Shape mismatch: obs={obs.shape} cal={cal.shape}. "
+                f"Recompute both maps with the same grid_size."
+            )
+        # Normalise each to [0,1] independently
+        obs = _norm01(obs)
+        cal = _norm01(cal)
+        dataset_id = Path(obs_path).stem.replace('_obs', '')
+        return cls(obs=obs, cal=cal, dataset_id=dataset_id)
+
+
+def _norm01(x: np.ndarray) -> np.ndarray:
+    mn, mx = x.min(), x.max()
+    if mx > mn:
+        return (x - mn) / (mx - mn)
+    return x - mn
+
+
+# ── Patch dataset ─────────────────────────────────────────────────────────────
+
+class PattersonPatchDataset(Dataset):
+    """
+    Extracts overlapping 3D patches from (obs, cal) Patterson volume pairs.
+
+    Each patch is an independent training sample. A single 64³ volume with
+    patch_size=16 and stride=8 yields (64-16)//8 + 1)³ = 7³ = 343 patches.
+    With stride=4: 13³ = 2197 patches per dataset.
+
+    The network learns to predict the CORRECTION:
+        target = obs_patch - cal_patch    (what needs to be subtracted)
+    At inference: cal_predicted = obs - network(obs)
+
+    Augmentation exploits Patterson symmetry:
+        P(u,v,w) = P(-u,-v,-w)   → inversion: flip all three axes simultaneously
+        P(u,v,w) = P(-u,v,w) etc → individual axis flips (for orthorhombic/higher)
+    For a general (triclinic) dataset only the inversion is guaranteed,
+    so we use all 2³=8 combinations of axis flips (all valid by inversion symmetry
+    applied to pairs of axes) plus the full inversion.
     """
 
     def __init__(self,
-                 patterson_maps: List[PattersonMap],
-                 conditioning_vectors: Optional[np.ndarray] = None,
+                 patches_obs: np.ndarray,   # (N, P, P, P)
+                 patches_cal: np.ndarray,   # (N, P, P, P)
+                 dataset_ids: List[str],
                  augment: bool = True):
+        assert len(patches_obs) == len(patches_cal)
+        self.obs        = patches_obs
+        self.cal        = patches_cal
+        self.ids        = dataset_ids
+        self.augment    = augment
+
+    def __len__(self) -> int:
+        return len(self.obs)
+
+    def __getitem__(self, idx: int):
+        obs = self.obs[idx].copy()   # (P, P, P)
+        cal = self.cal[idx].copy()
+
+        if self.augment:
+            # Flip each axis independently — all valid by Patterson inversion symmetry
+            for ax in range(3):
+                if np.random.rand() > 0.5:
+                    obs = np.flip(obs, axis=ax).copy()
+                    cal = np.flip(cal, axis=ax).copy()
+            # Random 90° rotations in each plane
+            for ax0, ax1 in [(0,1), (0,2), (1,2)]:
+                k = np.random.randint(0, 4)
+                obs = np.rot90(obs, k=k, axes=(ax0, ax1)).copy()
+                cal = np.rot90(cal, k=k, axes=(ax0, ax1)).copy()
+
+        x      = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)  # (1,P,P,P)
+        target = torch.tensor(obs - cal, dtype=torch.float32).unsqueeze(0)  # correction
+        return x, target
+
+    # ── Factory methods ────────────────────────────────────────────────────
+
+    @classmethod
+    def from_patt_pairs(cls,
+                        pairs: List[Tuple[str, str]],
+                        patch_size: int = 16,
+                        stride: int = 8,
+                        augment: bool = True) -> 'PattersonPatchDataset':
         """
+        Build dataset from a list of (obs_path, cal_path) tuples.
+
         Parameters
         ----------
-        patterson_maps       : list of PattersonMap objects
-        conditioning_vectors : shape (n_datasets, C) — one row per dataset.
-                               If None, a zero vector is used.
-        augment              : if True, apply random flips/rotations
+        pairs      : list of (obs.patt, cal.patt) file path pairs
+        patch_size : size of cubic patches (P)
+        stride     : stride between patch centres
+        augment    : apply data augmentation
         """
-        self.maps    = patterson_maps
-        self.augment = augment
+        all_obs, all_cal, all_ids = [], [], []
 
-        # Build a lookup from dataset_id to conditioning vector
-        self.cond_lookup = {}
-        if conditioning_vectors is not None:
-            # conditioning_vectors is a dict: {dataset_id: np.ndarray}
-            self.cond_lookup = conditioning_vectors
-        
-        # Infer conditioning size
-        sample_cond = next(iter(self.cond_lookup.values()), None)
-        self.cond_size = len(sample_cond) if sample_cond is not None else 8
+        for obs_path, cal_path in pairs:
+            pair = PattPair.from_patt_files(obs_path, cal_path)
+            obs_patches, cal_patches = _extract_patches(
+                pair.obs, pair.cal, patch_size, stride
+            )
+            n = len(obs_patches)
+            all_obs.append(obs_patches)
+            all_cal.append(cal_patches)
+            all_ids.extend([pair.dataset_id] * n)
+            print(f"  {pair.dataset_id}: {pair.obs.shape} → {n} patches")
 
-    def __len__(self):
-        return len(self.maps)
+        obs_arr = np.concatenate(all_obs, axis=0)
+        cal_arr = np.concatenate(all_cal, axis=0)
+        print(f"Total patches: {len(obs_arr)}")
+        return cls(obs_arr, cal_arr, all_ids, augment=augment)
 
-    def __getitem__(self, idx):
-        pm = self.maps[idx]
+    def split(self,
+              val_fraction: float = 0.15,
+              seed: int = 42) -> Tuple['PattersonPatchDataset',
+                                       'PattersonPatchDataset']:
+        """
+        Split into train/val sets.
+        Split is done at the DATASET level (not patch level) to avoid
+        data leakage: all patches from one volume stay together.
+        """
+        rng = np.random.default_rng(seed)
 
-        # Maps — add channel dimension
-        x = torch.tensor(pm.map_obs, dtype=torch.float32).unsqueeze(0)
-        y = torch.tensor(pm.map_cal, dtype=torch.float32).unsqueeze(0)
+        # Find unique dataset ids
+        unique_ids = list(dict.fromkeys(self.ids))  # preserves order
+        rng.shuffle(unique_ids)
+        n_val = max(1, min(int(len(unique_ids) * val_fraction),
+                           len(unique_ids) - 1))
+        val_ids  = set(unique_ids[:n_val])
+        train_ids = set(unique_ids[n_val:])
 
-        # Conditioning vector
-        cond = self.cond_lookup.get(pm.dataset_id,
-                                    np.zeros(self.cond_size, dtype=np.float32))
-        c = torch.tensor(cond, dtype=torch.float32)
+        train_mask = np.array([id_ in train_ids for id_ in self.ids])
+        val_mask   = ~train_mask
 
-        # Augmentation — Patterson maps have inversion symmetry P(-r) = P(r)
-        # so we can flip both axes independently
-        if self.augment:
-            if torch.rand(1) > 0.5:
-                x = torch.flip(x, dims=[1])
-                y = torch.flip(y, dims=[1])
-            if torch.rand(1) > 0.5:
-                x = torch.flip(x, dims=[2])
-                y = torch.flip(y, dims=[2])
-            # 90-degree rotations also valid due to Patterson symmetry
-            k = torch.randint(0, 4, (1,)).item()
-            x = torch.rot90(x, k, dims=[1, 2])
-            y = torch.rot90(y, k, dims=[1, 2])
+        def subset(mask, aug):
+            return PattersonPatchDataset(
+                self.obs[mask], self.cal[mask],
+                [id_ for id_, m in zip(self.ids, mask) if m],
+                aug
+            )
 
-        return x, c, y
+        train_ds = subset(train_mask, True)
+        val_ds   = subset(val_mask,   False)
+        print(f"Train patches: {len(train_ds)}  |  Val patches: {len(val_ds)}")
+        return train_ds, val_ds
 
 
-# -----------------------------------------------------------------------
-# Model components
-# -----------------------------------------------------------------------
+def _extract_patches(obs: np.ndarray,
+                     cal: np.ndarray,
+                     patch_size: int,
+                     stride: int) -> Tuple[np.ndarray, np.ndarray]:
+    """Extract all overlapping cubic patches from two aligned volumes."""
+    P = patch_size
+    nx, ny, nz = obs.shape
+    obs_patches, cal_patches = [], []
+    for i in range(0, nx - P + 1, stride):
+        for j in range(0, ny - P + 1, stride):
+            for k in range(0, nz - P + 1, stride):
+                obs_patches.append(obs[i:i+P, j:j+P, k:k+P])
+                cal_patches.append(cal[i:i+P, j:j+P, k:k+P])
+    return np.array(obs_patches), np.array(cal_patches)
 
-class ConditioningInjector(nn.Module):
+
+# ── Model ─────────────────────────────────────────────────────────────────────
+
+class ResBlock3D(nn.Module):
     """
-    Projects the conditioning vector to a spatial bias map
-    that is added to feature maps at each scale.
-    Allows the network to modulate its correction strength
-    based on dataset properties.
+    3D residual block: Conv3D → BN → ReLU → Conv3D → BN + skip.
+    Uses 3×3×3 kernels throughout — purely local filter.
+    No downsampling — preserves spatial resolution exactly.
     """
-    def __init__(self, cond_size: int, n_channels: int):
-        super().__init__()
-        self.fc = nn.Sequential(
-            nn.Linear(cond_size, n_channels * 2),
-            nn.ReLU(),
-            nn.Linear(n_channels * 2, n_channels * 2)
-        )
-        self.n_channels = n_channels
-
-    def forward(self, features: torch.Tensor,
-                conditioning: torch.Tensor) -> torch.Tensor:
-        """
-        Apply FiLM (Feature-wise Linear Modulation):
-            out = gamma * features + beta
-        where gamma, beta are predicted from conditioning vector.
-        """
-        params = self.fc(conditioning)              # (B, 2*C)
-        gamma, beta = params.chunk(2, dim=-1)       # each (B, C)
-
-        # Reshape for broadcasting over spatial dims
-        gamma = gamma.unsqueeze(-1).unsqueeze(-1)   # (B, C, 1, 1)
-        beta  = beta.unsqueeze(-1).unsqueeze(-1)    # (B, C, 1, 1)
-
-        return gamma * features + beta
-
-
-class ConvBlock(nn.Module):
-    """Conv → BatchNorm → ReLU × 2"""
-    def __init__(self, in_ch: int, out_ch: int):
+    def __init__(self, channels: int, dropout: float = 0.1):
         super().__init__()
         self.block = nn.Sequential(
-            nn.Conv2d(in_ch, out_ch, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(out_ch),
+            nn.Conv3d(channels, channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm3d(channels),
             nn.ReLU(inplace=True),
-            nn.Conv2d(out_ch, out_ch, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(out_ch),
-            nn.ReLU(inplace=True)
+            nn.Dropout3d(p=dropout),
+            nn.Conv3d(channels, channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm3d(channels),
         )
+        self.relu = nn.ReLU(inplace=True)
 
-    def forward(self, x):
-        return self.block(x)
-
-
-class EncoderBlock(nn.Module):
-    """ConvBlock + MaxPool downsampling."""
-    def __init__(self, in_ch: int, out_ch: int):
-        super().__init__()
-        self.conv  = ConvBlock(in_ch, out_ch)
-        self.pool  = nn.MaxPool2d(2)
-
-    def forward(self, x):
-        skip = self.conv(x)
-        return self.pool(skip), skip
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.relu(x + self.block(x))
 
 
-class DecoderBlock(nn.Module):
-    """Upsample + skip connection + ConvBlock."""
-    def __init__(self, in_ch: int, out_ch: int):
-        super().__init__()
-        self.up   = nn.ConvTranspose2d(in_ch, out_ch,
-                                        kernel_size=2, stride=2)
-        self.conv = ConvBlock(out_ch * 2, out_ch)
-
-    def forward(self, x, skip):
-        x = self.up(x)
-        # Handle size mismatch from odd-sized inputs
-        if x.shape != skip.shape:
-            x = F.interpolate(x, size=skip.shape[2:], mode='bilinear',
-                              align_corners=False)
-        x = torch.cat([x, skip], dim=1)
-        return self.conv(x)
-
-
-# -----------------------------------------------------------------------
-# Main model — conditioned U-Net
-# -----------------------------------------------------------------------
-
-class PattersonCNN(nn.Module):
+class PattersonFilterCNN(nn.Module):
     """
-    Conditioned U-Net that maps observed Patterson maps to
-    calculated Patterson maps.
+    3D residual filter that maps an observed Patterson map patch to
+    the correction that should be subtracted from it.
+
+    At initialisation all weights are small → network predicts ≈0 correction
+    → identity transform. Training nudges it to learn the distortion.
 
     Architecture:
-        Encoder: 4 levels of downsampling
-        Bottleneck: deepest feature representation
-        Decoder: 4 levels of upsampling with skip connections
-        Conditioning: FiLM injection at each encoder level
+        input (1, P, P, P)
+            ↓ expand to base_ch channels
+        [ResBlock3D] × n_blocks   ← purely local 3×3×3 filter
+            ↓ collapse to 1 channel
+        output (1, P, P, P)       ← predicted correction
 
-    Input:
-        x    : (B, 1, N, N) — observed Patterson map
-        cond : (B, C)       — conditioning vector
+    Full volume correction (inference):
+        corrected[u,v,w] = obs[u,v,w] - network(obs)[u,v,w]
+        implemented as sliding window with overlap-average blending.
 
-    Output:
-        (B, 1, N, N) — predicted calculated Patterson map
+    Parameters
+    ----------
+    patch_size : spatial size of input patches (not used in forward,
+                 stored for reference)
+    base_ch    : number of channels in residual blocks
+    n_blocks   : depth of the filter (more blocks = larger receptive field)
+                 receptive field = 1 + n_blocks * 2 * (kernel_size - 1)
+                                 = 1 + n_blocks * 4  (for 3×3×3 kernels)
+                 n_blocks=8  → receptive field = 33 voxels
+                 n_blocks=12 → receptive field = 49 voxels
+    dropout    : dropout rate inside residual blocks (regularisation)
     """
 
     def __init__(self,
-                 grid_size:   int = 64,
-                 cond_size:   int = 8,
-                 base_ch:     int = 32):
+                 patch_size: int = 16,
+                 base_ch:    int = 32,
+                 n_blocks:   int = 8,
+                 dropout:    float = 0.1):
+        super().__init__()
+        self.patch_size = patch_size
+        self.base_ch    = base_ch
+        self.n_blocks   = n_blocks
+
+        # Input projection: 1 → base_ch
+        self.input_proj = nn.Sequential(
+            nn.Conv3d(1, base_ch, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm3d(base_ch),
+            nn.ReLU(inplace=True),
+        )
+
+        # Residual filter stack
+        self.blocks = nn.Sequential(
+            *[ResBlock3D(base_ch, dropout=dropout) for _ in range(n_blocks)]
+        )
+
+        # Output projection: base_ch → 1
+        # Initialise final conv weights to near-zero so network starts
+        # as identity (predicts zero correction)
+        self.output_proj = nn.Conv3d(base_ch, 1, kernel_size=1)
+        nn.init.normal_(self.output_proj.weight, std=1e-3)
+        nn.init.zeros_(self.output_proj.bias)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Parameters
         ----------
-        grid_size : spatial size of Patterson maps (N)
-        cond_size : length of conditioning vector
-        base_ch   : base number of channels (doubles at each level)
+        x : (B, 1, P, P, P) observed Patterson patch
+
+        Returns
+        -------
+        correction : (B, 1, P, P, P)
+            Predicted correction. Apply as: cal_predicted = x - correction
         """
-        super().__init__()
+        h = self.input_proj(x)
+        h = self.blocks(h)
+        correction = self.output_proj(h)
+        return correction
 
-        ch = base_ch
-        self.grid_size = grid_size
-        self.cond_size = cond_size
-
-        # Encoder
-        self.enc1 = EncoderBlock(1,      ch)      # 64 → 32
-        self.enc2 = EncoderBlock(ch,     ch*2)    # 32 → 16
-        self.enc3 = EncoderBlock(ch*2,   ch*4)    # 16 → 8
-        self.enc4 = EncoderBlock(ch*4,   ch*8)    # 8  → 4
-
-        # Bottleneck
-        self.bottleneck = ConvBlock(ch*8, ch*16)  # 4  → 4
-
-        # Decoder
-        self.dec4 = DecoderBlock(ch*16,  ch*8)   # 4  → 8
-        self.dec3 = DecoderBlock(ch*8,   ch*4)   # 8  → 16
-        self.dec2 = DecoderBlock(ch*4,   ch*2)   # 16 → 32
-        self.dec1 = DecoderBlock(ch*2,   ch)     # 32 → 64
-
-        # Output — predict residual (obs + residual = cal)
-        self.output_conv = nn.Conv2d(ch, 1, kernel_size=1)
-
-        # Conditioning injectors — one per encoder level
-        self.cond1 = ConditioningInjector(cond_size, ch)
-        self.cond2 = ConditioningInjector(cond_size, ch*2)
-        self.cond3 = ConditioningInjector(cond_size, ch*4)
-        self.cond4 = ConditioningInjector(cond_size, ch*8)
-
-    def forward(self, x: torch.Tensor,
-                cond: torch.Tensor) -> torch.Tensor:
-
-        # Encoder path — save skips
-        x1, skip1 = self.enc1(x)
-        x1 = self.cond1(x1, cond)
-
-        x2, skip2 = self.enc2(x1)
-        x2 = self.cond2(x2, cond)
-
-        x3, skip3 = self.enc3(x2)
-        x3 = self.cond3(x3, cond)
-
-        x4, skip4 = self.enc4(x3)
-        x4 = self.cond4(x4, cond)
-
-        # Bottleneck
-        b = self.bottleneck(x4)
-
-        # Decoder path
-        d = self.dec4(b,  skip4)
-        d = self.dec3(d,  skip3)
-        d = self.dec2(d,  skip2)
-        d = self.dec1(d,  skip1)
-
-        # Predict residual and add to input (skip connection at map level)
-        residual = self.output_conv(d)
-        return x + residual
+    def n_parameters(self) -> int:
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
 
 
-# -----------------------------------------------------------------------
-# Training
-# -----------------------------------------------------------------------
+# ── Reciprocal-space loss ──────────────────────────────────────────────────────
+
+def reciprocal_space_loss(pred_cal: torch.Tensor,
+                          true_cal: torch.Tensor) -> torch.Tensor:
+    """
+    R-factor-inspired loss in reciprocal space.
+
+    Takes the 3D FFT of both maps and compares the amplitude spectra.
+    This penalises errors in the actual structure factor amplitudes,
+    not just the Patterson map pixel values.
+
+    pred_cal, true_cal : (B, 1, P, P, P) Patterson map patches
+    """
+    # FFT of each patch — rfft3 gives the positive-frequency half
+    F_pred = torch.fft.rfftn(pred_cal, dim=(-3,-2,-1))
+    F_true = torch.fft.rfftn(true_cal, dim=(-3,-2,-1))
+
+    amp_pred = torch.abs(F_pred)
+    amp_true = torch.abs(F_true)
+
+    # Normalise amplitudes — we care about relative not absolute values
+    amp_pred = amp_pred / (amp_pred.mean(dim=(-3,-2,-1), keepdim=True) + 1e-8)
+    amp_true = amp_true / (amp_true.mean(dim=(-3,-2,-1), keepdim=True) + 1e-8)
+
+    return F.l1_loss(amp_pred, amp_true)
+
+
+# ── Trainer ───────────────────────────────────────────────────────────────────
 
 class PattersonTrainer:
     """
-    Handles training, validation, and checkpointing of PattersonCNN.
+    Trains PattersonFilterCNN with a combined loss:
+        loss = α * L_patterson + β * L_reciprocal
+
+    L_patterson  : L1 + MSE on corrected Patterson patches
+    L_reciprocal : L1 on FFT amplitude spectra (structure factor amplitudes)
+
+    The reciprocal-space loss directly optimises what we care about
+    (corrected |F_hkl|) and is complementary to the map-space loss.
     """
 
     def __init__(self,
-                 model:       PattersonCNN,
-                 device:      str = 'cuda',
-                 lr:          float = 1e-3,
-                 weight_decay: float = 1e-4):
-
+                 model:        PattersonFilterCNN,
+                 device:       str   = 'cuda',
+                 lr:           float = 1e-3,
+                 weight_decay: float = 1e-4,
+                 alpha:        float = 0.7,   # weight for Patterson loss
+                 beta:         float = 0.3):  # weight for reciprocal loss
         self.model  = model.to(device)
         self.device = device
-        self.opt    = torch.optim.Adam(model.parameters(),
-                                       lr=lr,
-                                       weight_decay=weight_decay)
-        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            self.opt, patience=5, factor=0.5, verbose=True
+        self.alpha  = alpha
+        self.beta   = beta
+
+        self.opt = torch.optim.AdamW(
+            model.parameters(), lr=lr, weight_decay=weight_decay
         )
-        self.train_losses = []
-        self.val_losses   = []
+        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            self.opt, T_max=100, eta_min=1e-5
+        )
+        self.history = {'train': [], 'val': [], 'train_rspace': [], 'val_rspace': []}
 
-    def loss_fn(self,
-                pred: torch.Tensor,
-                target: torch.Tensor) -> torch.Tensor:
-        """
-        Combined L1 + MSE loss.
-        L1 is robust to outliers (important for Patterson maps
-        which can have sharp origin peaks).
-        MSE penalises large deviations.
-        """
-        l1  = F.l1_loss(pred, target)
-        mse = F.mse_loss(pred, target)
-        return 0.5 * l1 + 0.5 * mse
+        print(f"Model parameters: {model.n_parameters():,}")
+        print(f"Device: {device}")
 
-    def train_epoch(self, loader: DataLoader) -> float:
+    def _compute_loss(self,
+                      x: torch.Tensor,
+                      target_correction: torch.Tensor
+                      ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        x                  : (B,1,P,P,P) observed patch
+        target_correction  : (B,1,P,P,P) = obs - cal  (what to subtract)
+
+        Returns (total_loss, reciprocal_loss)
+        """
+        pred_correction = self.model(x)
+
+        # Predicted corrected map
+        pred_cal = x - pred_correction
+        true_cal = x - target_correction
+
+        # Patterson-space loss on the correction itself
+        l1  = F.l1_loss(pred_correction, target_correction)
+        mse = F.mse_loss(pred_correction, target_correction)
+        l_patt = 0.5 * l1 + 0.5 * mse
+
+        # Reciprocal-space loss on the resulting corrected maps
+        l_rspace = reciprocal_space_loss(pred_cal, true_cal)
+
+        total = self.alpha * l_patt + self.beta * l_rspace
+        return total, l_rspace
+
+    def train_epoch(self, loader: DataLoader) -> Tuple[float, float]:
         self.model.train()
-        total_loss = 0.0
-        for x, c, y in loader:
-            x = x.to(self.device)
-            c = c.to(self.device)
-            y = y.to(self.device)
-
+        total, rspace = 0.0, 0.0
+        for x, target in loader:
+            x      = x.to(self.device)
+            target = target.to(self.device)
             self.opt.zero_grad()
-            pred = self.model(x, c)
-            loss = self.loss_fn(pred, y)
+            loss, lr = self._compute_loss(x, target)
             loss.backward()
-
-            # Gradient clipping — Patterson maps can have large dynamic range
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
             self.opt.step()
-            total_loss += loss.item()
-
-        return total_loss / len(loader)
+            total  += loss.item()
+            rspace += lr.item()
+        n = len(loader)
+        return total / n, rspace / n
 
     @torch.no_grad()
-    def val_epoch(self, loader: DataLoader) -> float:
+    def val_epoch(self, loader: DataLoader) -> Tuple[float, float]:
         self.model.eval()
-        total_loss = 0.0
-        for x, c, y in loader:
-            x = x.to(self.device)
-            c = c.to(self.device)
-            y = y.to(self.device)
-            pred = self.model(x, c)
-            total_loss += self.loss_fn(pred, y).item()
-        return total_loss / len(loader)
+        total, rspace = 0.0, 0.0
+        for x, target in loader:
+            x      = x.to(self.device)
+            target = target.to(self.device)
+            loss, lr = self._compute_loss(x, target)
+            total  += loss.item()
+            rspace += lr.item()
+        n = len(loader)
+        return total / n, rspace / n
 
     def train(self,
-              train_loader: DataLoader,
-              val_loader:   DataLoader,
-              n_epochs:     int = 100,
-              checkpoint_path: str = 'patterson_cnn.pt'):
+              train_ds:        PattersonPatchDataset,
+              val_ds:          PattersonPatchDataset,
+              n_epochs:        int  = 100,
+              batch_size:      int  = 16,
+              num_workers:     int  = 4,
+              checkpoint_path: str  = 'patterson_filter.pt'):
+
+        train_loader = DataLoader(
+            train_ds, batch_size=batch_size, shuffle=True,
+            num_workers=num_workers, pin_memory=True
+        )
+        val_loader = DataLoader(
+            val_ds, batch_size=batch_size, shuffle=False,
+            num_workers=num_workers, pin_memory=True
+        )
 
         best_val = float('inf')
 
         for epoch in range(1, n_epochs + 1):
-            train_loss = self.train_epoch(train_loader)
-            val_loss   = self.val_epoch(val_loader)
+            tr_loss, tr_rsp = self.train_epoch(train_loader)
+            va_loss, va_rsp = self.val_epoch(val_loader)
+            self.scheduler.step()
 
-            self.train_losses.append(train_loss)
-            self.val_losses.append(val_loss)
-            self.scheduler.step(val_loss)
+            self.history['train'].append(tr_loss)
+            self.history['val'].append(va_loss)
+            self.history['train_rspace'].append(tr_rsp)
+            self.history['val_rspace'].append(va_rsp)
 
-            print(f"Epoch {epoch:04d} | "
-                  f"train loss: {train_loss:.6f} | "
-                  f"val loss:   {val_loss:.6f}")
+            print(f"Epoch {epoch:04d}  "
+                  f"train {tr_loss:.5f} (rsp {tr_rsp:.5f})  "
+                  f"val {va_loss:.5f} (rsp {va_rsp:.5f})")
 
-            if val_loss < best_val:
-                best_val = val_loss
-                torch.save({
-                    'epoch':       epoch,
-                    'model_state': self.model.state_dict(),
-                    'opt_state':   self.opt.state_dict(),
-                    'val_loss':    val_loss,
-                    'grid_size':   self.model.grid_size,
-                    'cond_size':   self.model.cond_size,
-                }, checkpoint_path)
-                print(f"  → Saved best model (val loss {best_val:.6f})")
+            if va_loss < best_val:
+                best_val = va_loss
+                self.save(checkpoint_path, epoch, va_loss)
+                print(f"  → checkpoint saved (val {best_val:.5f})")
 
-    def plot_losses(self, filename: Optional[str] = None):
-        fig, ax = plt.subplots(figsize=(8, 4))
-        ax.plot(self.train_losses, label='Train')
-        ax.plot(self.val_losses,   label='Val')
-        ax.set_xlabel('Epoch')
-        ax.set_ylabel('Loss')
-        ax.set_title('Patterson CNN Training')
-        ax.legend()
+    def save(self, path: str, epoch: int, val_loss: float) -> None:
+        torch.save({
+            'epoch':       epoch,
+            'model_state': self.model.state_dict(),
+            'opt_state':   self.opt.state_dict(),
+            'val_loss':    val_loss,
+            'patch_size':  self.model.patch_size,
+            'base_ch':     self.model.base_ch,
+            'n_blocks':    self.model.n_blocks,
+            'history':     self.history,
+        }, path)
+
+    @classmethod
+    def load(cls, path: str, device: str = 'cuda') -> 'PattersonFilterCNN':
+        """Load a saved model. Returns the model (not the trainer)."""
+        ckpt = torch.load(path, map_location=device)
+        model = PattersonFilterCNN(
+            patch_size = ckpt['patch_size'],
+            base_ch    = ckpt['base_ch'],
+            n_blocks   = ckpt['n_blocks'],
+        )
+        model.load_state_dict(ckpt['model_state'])
+        model.to(device)
+        model.eval()
+        print(f"Loaded model from epoch {ckpt['epoch']} "
+              f"(val loss {ckpt['val_loss']:.5f})")
+        return model
+
+    def plot_losses(self, filename: Optional[str] = None) -> None:
+        fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+        for ax, key, title in zip(
+            axes,
+            [('train','val'), ('train_rspace','val_rspace')],
+            ['Patterson-space loss', 'Reciprocal-space loss']
+        ):
+            ax.plot(self.history[key[0]], label='Train')
+            ax.plot(self.history[key[1]], label='Val')
+            ax.set_xlabel('Epoch'); ax.set_ylabel('Loss')
+            ax.set_title(title); ax.legend()
         plt.tight_layout()
         if filename:
             plt.savefig(filename, dpi=200)
@@ -395,220 +572,345 @@ class PattersonTrainer:
             plt.show()
 
 
-# -----------------------------------------------------------------------
-# Inference — correct a new dataset
-# -----------------------------------------------------------------------
+# ── Inference ─────────────────────────────────────────────────────────────────
 
 @torch.no_grad()
-def correct_patterson_map(model:         PattersonCNN,
-                          map_obs:       np.ndarray,
-                          conditioning:  np.ndarray,
-                          device:        str = 'cuda') -> np.ndarray:
+def correct_volume(obs_path:   str,
+                   model:      PattersonFilterCNN,
+                   patch_size: int = 16,
+                   stride:     int = 8,
+                   device:     str = 'cuda',
+                   out_path:   Optional[str] = None) -> np.ndarray:
     """
-    Run inference on a single observed Patterson map.
+    Correct a full observed Patterson volume using sliding-window inference.
+
+    Overlapping patches are averaged using a Gaussian weight window to
+    avoid boundary artefacts at patch edges.
 
     Parameters
     ----------
-    model        : trained PattersonCNN
-    map_obs      : (N, N) observed Patterson map (normalised)
-    conditioning : (C,) conditioning vector for this dataset
-    device       : 'cuda' or 'cpu'
+    obs_path   : path to observed .patt file
+    model      : trained PattersonFilterCNN
+    patch_size : must match training patch size
+    stride     : sliding step (smaller = more overlap = smoother but slower)
+    device     : 'cuda' or 'cpu'
+    out_path   : if given, write corrected map to this .patt file
 
     Returns
     -------
-    map_corrected : (N, N) corrected Patterson map
+    corrected : (nx, ny, nz) float32 corrected Patterson map, normalised [0,1]
     """
     model.eval()
     model.to(device)
 
-    x = torch.tensor(map_obs, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
-    c = torch.tensor(conditioning, dtype=torch.float32).unsqueeze(0)
+    obs, label = read_patt(obs_path)
+    obs = _norm01(obs)
+    nx, ny, nz = obs.shape
+    P = patch_size
 
-    x = x.to(device)
-    c = c.to(device)
+    # Gaussian window for smooth blending at patch boundaries
+    g1d = np.exp(-0.5 * ((np.arange(P) - (P-1)/2) / (P/4))**2)
+    window = g1d[:,None,None] * g1d[None,:,None] * g1d[None,None,:]
+    window = window.astype(np.float32)
 
-    pred = model(x, c)
-    return pred.squeeze().cpu().numpy()
+    correction_sum  = np.zeros_like(obs)
+    weight_sum      = np.zeros_like(obs)
+
+    for i in range(0, nx - P + 1, stride):
+        for j in range(0, ny - P + 1, stride):
+            for k in range(0, nz - P + 1, stride):
+                patch = obs[i:i+P, j:j+P, k:k+P]
+                x = torch.tensor(patch, dtype=torch.float32
+                                 ).unsqueeze(0).unsqueeze(0).to(device)
+                corr = model(x).squeeze().cpu().numpy()   # (P,P,P)
+                correction_sum[i:i+P, j:j+P, k:k+P] += corr * window
+                weight_sum[i:i+P, j:j+P, k:k+P]     += window
+
+    # Avoid division by zero at edges not covered by any patch
+    mask = weight_sum > 0
+    correction = np.zeros_like(obs)
+    correction[mask] = correction_sum[mask] / weight_sum[mask]
+
+    corrected = _norm01(np.clip(obs - correction, 0, None))
+
+    if out_path:
+        write_patt(corrected, out_path,
+                   label=f"corrected_{label}")
+        print(f"Wrote corrected map to {out_path}")
+
+    return corrected
 
 
-def back_transform_patterson(map_corrected: np.ndarray,
-                              spots,
-                              grid_size: int = 64) -> dict:
+# ── Back-transform ─────────────────────────────────────────────────────────────
+
+def back_transform_3d(corrected_map: np.ndarray,
+                      spots_list,
+                      normalise_to_obs: bool = True) -> Dict:
     """
     Extract corrected |F_hkl| values from a corrected Patterson map
-    by projecting back onto the measured reflection positions.
+    using the 3D inverse FFT relationship.
 
-    This uses the inverse relationship:
-        I_hkl_corrected ∝ integral of P_corrected * cos(2pi*(h*u + k*v)) du dv
+    The Patterson map P(u,v,w) = Σ_hkl |F_hkl|² exp(2πi(hu+kv+lw))
+    so |F_hkl|² = FT[ P(u,v,w) ] evaluated at (h,k,l).
 
-    Which is just the discrete Fourier coefficient at (h, k).
+    Since P is real and centrosymmetric, we use rfftn and take the
+    real part of the FFT coefficients.
 
     Parameters
     ----------
-    map_corrected : (N, N) corrected Patterson map
-    spots         : list of Spot objects (same image)
-    grid_size     : must match the map grid size
+    corrected_map    : (N,N,N) corrected Patterson map
+    spots_list       : SpotsList object (provides H,K,L and Fc for scaling)
+    normalise_to_obs : if True, scale corrected Fo to match mean observed Fo
 
     Returns
     -------
-    dict mapping (H, K, L) → corrected Fo value
+    dict mapping (H,K,L) → Fo_corrected (float)
     """
-    N = grid_size
-    u = np.linspace(0, 1, N, endpoint=False)
-    v = np.linspace(0, 1, N, endpoint=False)
-    uu, vv = np.meshgrid(u, v)
-    du_dv = (1.0 / N) ** 2   # area element
+    N = corrected_map.shape[0]
+
+    # FFT of Patterson → |F|² at each grid point
+    # Use real FFT: Patterson is real → F[h,k,l] is Hermitian
+    # The real part of the FFT gives the cosine transform = Patterson coefficients
+    F2 = np.real(np.fft.fftn(corrected_map))   # (N,N,N), values are |F_hkl|²
 
     corrections = {}
-    for spot in spots:
-        h = spot.H
-        k = spot.K
+    for spot in spots_list.spots:
+        h, k, l = spot.H, spot.K, spot.L
 
-        # Project Patterson onto this (h,k) — Fourier coefficient
-        phase  = 2.0 * np.pi * (h * uu + k * vv)
-        I_corr = np.sum(map_corrected * np.cos(phase)) * du_dv
+        # Map miller indices to FFT grid indices (with wrapping for negative h,k,l)
+        ih = h % N
+        ik = k % N
+        il = l % N
 
-        # I = F^2, so F = sqrt(|I|)
-        Fo_corrected = np.sqrt(np.abs(I_corr))
-        corrections[(spot.H, spot.K, spot.L)] = Fo_corrected
+        I_corr = F2[ih, ik, il]
+
+        # I = F², F = sqrt(|I|)
+        Fo_corr = np.sqrt(max(0.0, float(I_corr)))
+        corrections[(h, k, l)] = Fo_corr
+
+    # Scale corrected Fo to match the mean of the observed Fo
+    if normalise_to_obs:
+        obs_fos  = [s.Fo for s in spots_list.spots
+                    if s.Fo is not None and s.Fo > 0]
+        corr_fos = [corrections[k] for k in corrections if corrections[k] > 0]
+        if obs_fos and corr_fos:
+            scale = np.mean(obs_fos) / np.mean(corr_fos)
+            corrections = {k: v * scale for k, v in corrections.items()}
 
     return corrections
 
 
-def apply_patterson_correction(model:        PattersonCNN,
-                               spots_list,
-                               device:       str = 'cuda',
-                               grid_size:    int = 64,
-                               verbose:      bool = True):
+# ── Evaluation ────────────────────────────────────────────────────────────────
+
+def evaluate_correction(corrections:     Dict,
+                        spots_list,
+                        filename:        Optional[str] = None,
+                        label:           str = '') -> Dict:
     """
-    Full pipeline: given a SpotsList, compute per-image Patterson maps,
-    run CNN correction, back-transform, and write corrected Fo values
-    back onto each Spot object.
+    Evaluate the quality of the Patterson CNN correction.
+
+    Computes:
+      - R1 before correction: Σ|Fc - Fo| / ΣFc
+      - R1 after  correction: Σ|Fc - Fo_corr| / ΣFc
+      - Pearson correlation before/after
+      - Scatter plots Fc vs Fo and Fc vs Fo_corrected
 
     Parameters
     ----------
-    model      : trained PattersonCNN
-    spots_list : SpotsList object to correct
-    device     : 'cuda' or 'cpu'
-    grid_size  : Patterson map grid size
-    verbose    : print progress
-    """
-    from patterson import (compute_patterson_2d,
-                           compute_dataset_conditioning)
-
-    # Dataset-level conditioning
-    conditioning = compute_dataset_conditioning(spots_list)
-
-    groups = spots_list.group_by_image()
-    n_corrected = 0
-
-    for image_id, image_spots in groups.items():
-
-        if len(image_spots) < 3:
-            continue
-
-        # Observed Patterson for this image
-        map_obs, _ = compute_patterson_2d(
-            image_spots.spots,
-            grid_size=grid_size,
-            normalise=True
-        )
-
-        # CNN correction
-        map_corrected = correct_patterson_map(
-            model, map_obs, conditioning, device=device
-        )
-
-        # Back-transform to get corrected Fo per reflection
-        corrections = back_transform_patterson(
-            map_corrected, image_spots.spots, grid_size=grid_size
-        )
-
-        # Write corrected values back to spot objects
-        for spot in image_spots.spots:
-            key = (spot.H, spot.K, spot.L)
-            if key in corrections:
-                spot.Fo_corrected = corrections[key]
-                n_corrected += 1
-
-    if verbose:
-        print(f"Corrected {n_corrected} spots in dataset "
-              f"{spots_list.output_prefix}")
-
-
-# -----------------------------------------------------------------------
-# Convenience: build datasets and loaders from SpotsList objects
-# -----------------------------------------------------------------------
-
-def build_loaders(spots_lists: list,
-                  grid_size:      int   = 64,
-                  val_fraction:   float = 0.15,
-                  batch_size:     int   = 32,
-                  num_workers:    int   = 4,
-                  augment:        bool  = True):
-    """
-    Build train/val DataLoaders from a list of SpotsList objects.
-
-    Parameters
-    ----------
-    spots_lists    : list of SpotsList objects
-    grid_size      : Patterson map grid size
-    val_fraction   : fraction of datasets held out for validation
-    batch_size     : training batch size
-    num_workers    : DataLoader workers
-    augment        : use data augmentation during training
+    corrections : dict (H,K,L) → Fo_corrected from back_transform_3d
+    spots_list  : SpotsList with Fc and Fo populated
+    filename    : if given, save plot to this path
+    label       : title prefix for the plot
 
     Returns
     -------
-    train_loader, val_loader, model_kwargs
-        model_kwargs contains grid_size and cond_size for PattersonCNN init
+    dict with keys: R1_before, R1_after, corr_before, corr_after
     """
-    from patterson import (compute_patterson_maps_for_dataset,
-                           compute_dataset_conditioning)
-    from torch.utils.data import random_split
+    Fc_vals, Fo_vals, Fo_corr_vals = [], [], []
 
-    # Split datasets into train/val at the dataset level
-    # (not at the image level, to avoid data leakage)
-    n_val   = max(1, int(len(spots_lists) * val_fraction))
-    n_train = len(spots_lists) - n_val
+    for spot in spots_list.spots:
+        if spot.Fc is None or spot.Fo is None:
+            continue
+        if spot.Fo <= 0 or spot.Fc <= 0:
+            continue
+        key = (spot.H, spot.K, spot.L)
+        if key not in corrections:
+            continue
+        Fo_c = corrections[key]
+        if Fo_c <= 0:
+            continue
+        Fc_vals.append(spot.Fc)
+        Fo_vals.append(spot.Fo)
+        Fo_corr_vals.append(Fo_c)
 
-    idx      = np.random.permutation(len(spots_lists))
-    train_sl = [spots_lists[i] for i in idx[:n_train]]
-    val_sl   = [spots_lists[i] for i in idx[n_train:]]
+    Fc   = np.array(Fc_vals)
+    Fo   = np.array(Fo_vals)
+    Fo_c = np.array(Fo_corr_vals)
 
-    def build_maps_and_conds(sl_list):
-        all_maps  = []
-        cond_dict = {}
-        for sl in sl_list:
-            maps = compute_patterson_maps_for_dataset(
-                sl, grid_size=grid_size, verbose=False
-            )
-            cond = compute_dataset_conditioning(sl)
-            cond_dict[sl.output_prefix] = cond
-            all_maps.extend(maps)
-        return all_maps, cond_dict
+    # Scale Fo to Fc scale for R1
+    s_before = np.median(Fc / Fo)
+    s_after  = np.median(Fc / Fo_c)
 
-    print(f"Building training maps ({n_train} datasets)...")
-    train_maps, train_conds = build_maps_and_conds(train_sl)
+    R1_before = np.sum(np.abs(Fc - s_before * Fo))   / np.sum(Fc)
+    R1_after  = np.sum(np.abs(Fc - s_after  * Fo_c)) / np.sum(Fc)
 
-    print(f"Building validation maps ({n_val} datasets)...")
-    val_maps, val_conds = build_maps_and_conds(val_sl)
+    corr_before = np.corrcoef(Fc, Fo)[0,1]
+    corr_after  = np.corrcoef(Fc, Fo_c)[0,1]
 
-    print(f"Train: {len(train_maps)} images | Val: {len(val_maps)} images")
+    print(f"\n{'='*50}")
+    print(f"  {label}")
+    print(f"  N reflections: {len(Fc)}")
+    print(f"  R1 before correction: {R1_before:.4f}")
+    print(f"  R1 after  correction: {R1_after:.4f}")
+    print(f"  Pearson r before: {corr_before:.4f}")
+    print(f"  Pearson r after:  {corr_after:.4f}")
+    print(f"{'='*50}\n")
 
-    # Infer conditioning size
-    cond_size = len(next(iter(train_conds.values())))
+    # Plot
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4.5))
+    lim = max(Fc.max(), Fo.max(), Fo_c.max()) * 1.05
 
-    train_ds = PattersonDataset(train_maps, train_conds, augment=augment)
-    val_ds   = PattersonDataset(val_maps,   val_conds,   augment=False)
+    for ax, fo, r, corr, title in zip(
+        axes,
+        [Fo, Fo_c],
+        [R1_before, R1_after],
+        [corr_before, corr_after],
+        ['Fc vs Fo (observed)', 'Fc vs Fo (CNN corrected)']
+    ):
+        ax.scatter(Fc, fo * (np.median(Fc/fo)), s=3, alpha=0.4, c='C0')
+        ax.plot([0, lim], [0, lim], 'k--', lw=0.8, alpha=0.5)
+        ax.set_xlabel('Fc')
+        ax.set_ylabel('Fo (scaled)')
+        ax.set_title(title)
+        ax.set_xlim(0, lim); ax.set_ylim(0, lim)
+        ax.text(0.05, 0.92, f'R1 = {r:.4f}\nr = {corr:.4f}',
+                transform=ax.transAxes, fontsize=9,
+                verticalalignment='top')
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size,
-                              shuffle=True,  num_workers=num_workers,
-                              pin_memory=True)
-    val_loader   = DataLoader(val_ds,   batch_size=batch_size,
-                              shuffle=False, num_workers=num_workers,
-                              pin_memory=True)
+    plt.suptitle(label, fontsize=11)
+    plt.tight_layout()
 
-    model_kwargs = dict(grid_size=grid_size, cond_size=cond_size)
+    if filename:
+        plt.savefig(filename, dpi=200)
+        print(f"Saved plot to {filename}")
+    else:
+        plt.show()
+    plt.close()
 
-    return train_loader, val_loader, model_kwargs
+    return {
+        'R1_before':   R1_before,
+        'R1_after':    R1_after,
+        'corr_before': corr_before,
+        'corr_after':  corr_after,
+        'n':           len(Fc),
+    }
+
+
+# ── Convenience: full pipeline ────────────────────────────────────────────────
+
+def run_training(obs_cal_pairs:  List[Tuple[str, str]],
+                 patch_size:     int   = 16,
+                 stride_train:   int   = 4,
+                 base_ch:        int   = 32,
+                 n_blocks:       int   = 8,
+                 n_epochs:       int   = 100,
+                 batch_size:     int   = 16,
+                 lr:             float = 1e-3,
+                 device:         str   = 'cuda',
+                 checkpoint:     str   = 'patterson_filter.pt',
+                 val_fraction:   float = 0.15) -> PattersonFilterCNN:
+    """
+    One-call training pipeline.
+
+    Parameters
+    ----------
+    obs_cal_pairs : list of (obs.patt, cal.patt) file pairs
+    patch_size    : size of 3D training patches
+    stride_train  : patch extraction stride (smaller = more patches, more overlap)
+    base_ch       : channels in residual blocks
+    n_blocks      : number of residual blocks
+                    receptive field = 1 + n_blocks*4 voxels
+    n_epochs      : training epochs
+    batch_size    : training batch size
+    lr            : initial learning rate
+    device        : 'cuda' or 'cpu'
+    checkpoint    : path to save best model
+    val_fraction  : fraction of datasets held out for validation
+
+    Returns
+    -------
+    trained PattersonFilterCNN
+    """
+    print(f"Building patch dataset from {len(obs_cal_pairs)} file pairs...")
+    full_ds = PattersonPatchDataset.from_patt_pairs(
+        obs_cal_pairs, patch_size=patch_size, stride=stride_train
+    )
+    train_ds, val_ds = full_ds.split(val_fraction=val_fraction)
+
+    model = PattersonFilterCNN(
+        patch_size=patch_size, base_ch=base_ch, n_blocks=n_blocks
+    )
+    trainer = PattersonTrainer(model, device=device, lr=lr)
+    trainer.train(train_ds, val_ds,
+                  n_epochs=n_epochs,
+                  batch_size=batch_size,
+                  checkpoint_path=checkpoint)
+    trainer.plot_losses(filename=checkpoint.replace('.pt', '_losses.png'))
+
+    return model
+
+
+def run_inference(obs_path:     str,
+                  model_path:   str,
+                  spots_list,
+                  patch_size:   int  = 16,
+                  stride:       int  = 8,
+                  device:       str  = 'cuda',
+                  out_patt:     Optional[str] = None,
+                  plot_path:    Optional[str] = None) -> Dict:
+    """
+    One-call inference + evaluation pipeline.
+
+    Parameters
+    ----------
+    obs_path    : observed .patt file
+    model_path  : saved model checkpoint (.pt file)
+    spots_list  : SpotsList with Fc and Fo populated
+    patch_size  : must match training patch size
+    stride      : sliding window stride for inference
+    device      : 'cuda' or 'cpu'
+    out_patt    : if given, save corrected Patterson map here
+    plot_path   : if given, save Fc vs Fo comparison plot here
+
+    Returns
+    -------
+    dict with R1_before, R1_after, corr_before, corr_after, n
+    """
+    model = PattersonTrainer.load(model_path, device=device)
+
+    print("Correcting Patterson map...")
+    corrected = correct_volume(
+        obs_path, model,
+        patch_size=patch_size, stride=stride,
+        device=device, out_path=out_patt
+    )
+
+    print("Back-transforming to reciprocal space...")
+    corrections = back_transform_3d(corrected, spots_list)
+
+    label = Path(obs_path).stem
+    results = evaluate_correction(
+        corrections, spots_list,
+        filename=plot_path, label=label
+    )
+
+    # Write corrected Fo back onto spot objects
+    n_written = 0
+    for spot in spots_list.spots:
+        key = (spot.H, spot.K, spot.L)
+        if key in corrections:
+            spot.Fo_corrected = corrections[key]
+            n_written += 1
+    print(f"Written corrected Fo to {n_written} spots")
+
+    return results

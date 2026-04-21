@@ -21,15 +21,24 @@ body{background:#07070e;color:#ccc;font-family:monospace;overflow:hidden;}
 #demoBtn{font-size:11px;padding:4px 12px;background:transparent;color:#446;border:0.5px solid #334;border-radius:4px;cursor:pointer;margin-top:4px;}
 #demoBtn:hover{color:#88aaff;border-color:#5588ff;}
 #main{position:fixed;inset:0;display:none;}
-#c3d{width:100%;height:100%;display:block;cursor:grab;}
+#c3d{width:100%;height:100%;display:block;}
 #plane-bar{position:absolute;top:10px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;background:rgba(7,7,20,.85);border:0.5px solid rgba(100,170,255,.4);border-radius:20px;padding:5px 14px;white-space:nowrap;z-index:20;}
 #plane-bar label{font-size:11px;color:rgba(120,190,255,.8);}
 #plane-bar input[type=range]{width:140px;cursor:pointer;}
-#plane-bar span{font-size:11px;font-weight:500;font-family:monospace;color:rgba(100,230,255,.9);min-width:32px;}
+#plane-bar span{font-size:11px;font-weight:500;font-family:monospace;color:rgba(100,230,255,.9);min-width:48px;}
 #plane-bar select{font-size:11px;padding:1px 4px;background:#0d0d22;color:rgba(180,215,255,.85);border:0.5px solid rgba(100,150,255,.4);border-radius:3px;}
 #fileinfo{position:absolute;top:10px;left:12px;font-size:11px;color:rgba(150,180,255,.5);z-index:20;line-height:1.6;}
 #backBtn{position:absolute;top:10px;right:12px;font-size:11px;padding:4px 10px;background:transparent;color:rgba(150,180,255,.6);border:0.5px solid rgba(100,150,255,.3);border-radius:4px;cursor:pointer;z-index:20;}
 #backBtn:hover{color:#aaccff;border-color:#5588ff;}
+
+/* Peaks load button */
+#peaksBtn{position:absolute;top:36px;right:12px;font-size:11px;padding:4px 10px;background:transparent;color:rgba(255,180,100,.6);border:0.5px solid rgba(255,150,80,.3);border-radius:4px;cursor:pointer;z-index:20;}
+#peaksBtn:hover{color:#ffcc88;border-color:#ff9955;}
+#peaksInput{display:none;}
+
+/* Hover tooltip */
+#tooltip{position:fixed;pointer-events:none;background:rgba(5,5,18,.92);border:0.5px solid rgba(100,200,255,.4);border-radius:6px;padding:6px 10px;font-size:11px;font-family:monospace;color:rgba(200,230,255,.9);z-index:200;display:none;line-height:1.7;}
+
 #pip{position:absolute;bottom:54px;right:12px;width:220px;border:1px solid rgba(100,150,255,.55);border-radius:6px;overflow:hidden;background:#07070e;z-index:15;user-select:none;}
 #pip-topbar{height:22px;background:rgba(15,20,50,.92);display:flex;align-items:center;gap:4px;padding:0 5px;cursor:move;flex-shrink:0;}
 #pip-label{font-size:10px;color:rgba(150,190,255,.7);pointer-events:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;margin:0 4px;}
@@ -50,6 +59,37 @@ body{background:#07070e;color:#ccc;font-family:monospace;overflow:hidden;}
 .cr input[type=range]{width:72px;cursor:pointer;}
 .cr select{font-size:11px;padding:1px 3px;background:#12122a;color:rgba(200,220,255,.8);border:0.5px solid rgba(100,150,255,.3);border-radius:3px;}
 .div{width:.5px;height:18px;background:rgba(255,255,255,.1);}
+/* Pair legend panel */
+#legend-panel{position:absolute;left:12px;top:50px;width:260px;background:rgba(7,7,20,.92);border:0.5px solid rgba(100,150,255,.35);border-radius:8px;z-index:20;user-select:none;font-size:11px;font-family:monospace;}
+#legend-topbar{height:24px;background:rgba(15,20,50,.95);display:flex;align-items:center;padding:0 8px;cursor:move;border-radius:8px 8px 0 0;gap:6px;}
+#legend-topbar span{color:rgba(150,190,255,.75);font-size:11px;flex:1;}
+#legend-toggle{font-size:10px;padding:2px 7px;background:transparent;color:rgba(150,180,255,.5);border:0.5px solid rgba(100,150,255,.3);border-radius:3px;cursor:pointer;}
+#legend-toggle:hover{color:#aaccff;}
+#legend-body{padding:6px 8px 8px;display:flex;flex-direction:column;gap:3px;}
+#legend-body.collapsed{display:none;}
+.legend-section{font-size:10px;color:rgba(120,160,255,.5);margin:4px 0 2px;letter-spacing:.5px;}
+.pair-row{display:flex;align-items:center;gap:6px;padding:1px 0;}
+.pair-swatch{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+.pair-label{flex:1;color:rgba(200,220,255,.8);}
+.pair-zz{color:rgba(150,180,255,.5);min-width:28px;text-align:right;}
+.pair-cb{cursor:pointer;accent-color:#44ffcc;}
+#legend-sep{height:.5px;background:rgba(100,150,255,.2);margin:5px 0;}
+.legend-ctrl{display:flex;align-items:center;gap:6px;margin:2px 0;}
+.legend-ctrl label{color:rgba(200,220,255,.65);flex:1;}
+.legend-ctrl input[type=range]{width:80px;cursor:pointer;}
+.legend-ctrl span{color:rgba(180,220,255,.7);min-width:32px;}
+.legend-ctrl input[type=checkbox]{cursor:pointer;accent-color:#44ffcc;}
+
+
+/* Rotation sliders panel */
+#rot-panel{position:absolute;left:12px;bottom:54px;background:rgba(7,7,20,.85);border:0.5px solid rgba(100,150,255,.3);border-radius:8px;padding:8px 12px;z-index:20;display:flex;flex-direction:column;gap:6px;}
+#rot-panel label.hdr{font-size:10px;color:rgba(120,160,255,.6);margin-bottom:2px;}
+.rot-row{display:flex;align-items:center;gap:6px;}
+.rot-row label{font-size:11px;width:14px;text-align:right;}
+.rot-row input[type=range]{width:100px;cursor:pointer;}
+.rot-row span{font-size:10px;font-family:monospace;color:rgba(180,220,255,.7);min-width:36px;}
+.rot-row button{font-size:10px;padding:1px 5px;background:transparent;color:rgba(150,180,255,.5);border:0.5px solid rgba(100,150,255,.3);border-radius:3px;cursor:pointer;}
+.rot-row button:hover{color:#aaccff;}
 </style>
 </head>
 <body>
@@ -68,20 +108,80 @@ body{background:#07070e;color:#ccc;font-family:monospace;overflow:hidden;}
 
 <div id="main">
   <canvas id="c3d"></canvas>
+
   <div id="plane-bar">
     <label>slice</label>
     <select id="selSliceAxis"><option value="x" selected>X</option><option value="y">Y</option><option value="z">Z</option></select>
     <input type="range" id="sSlicePos" min="0" max="63" value="32" step="1">
-    <span id="vSlicePos">0.50</span>
+    <span id="vSlicePos">0.00</span>
   </div>
+
   <div id="fileinfo"></div>
   <button id="backBtn" onclick="showDropzone()">load new file</button>
+  <button id="peaksBtn" onclick="document.getElementById('peaksInput').click()">load peaks (.json)</button>
+  <input type="file" id="peaksInput" accept=".json">
+
+  <div id="tooltip"></div>
+
+  <!-- Rotation sliders -->
+  <div id="rot-panel">
+    <label class="hdr">rotate view</label>
+    <div class="rot-row">
+      <label style="color:#ff5566">X</label>
+      <input type="range" id="rX" min="-180" max="180" value="0" step="1">
+      <span id="vRX">0°</span>
+      <button onclick="document.getElementById('rX').value=0;applyRotSliders()">↺</button>
+    </div>
+    <div class="rot-row">
+      <label style="color:#33dd66">Y</label>
+      <input type="range" id="rY" min="-180" max="180" value="0" step="1">
+      <span id="vRY">0°</span>
+      <button onclick="document.getElementById('rY').value=0;applyRotSliders()">↺</button>
+    </div>
+    <div class="rot-row">
+      <label style="color:#3388ff">Z</label>
+      <input type="range" id="rZ" min="-180" max="180" value="0" step="1">
+      <span id="vRZ">0°</span>
+      <button onclick="document.getElementById('rZ').value=0;applyRotSliders()">↺</button>
+    </div>
+  </div>
+
+  <!-- Pair legend / filter panel -->
+  <div id="legend-panel">
+    <div id="legend-topbar">
+      <span>peak pairs</span>
+      <button id="legend-toggle" onclick="toggleLegend()">hide</button>
+    </div>
+    <div id="legend-body">
+      <div class="legend-section">PAIR TYPES</div>
+      <div id="pair-rows"><!-- filled by JS --></div>
+      <div id="legend-sep"></div>
+      <div class="legend-section">FILTERS</div>
+      <div class="legend-ctrl">
+        <label>d min (Å)</label>
+        <input type="range" id="sPkDmin" min="0" max="10" value="0" step="0.1">
+        <span id="vPkDmin">0.0</span>
+      </div>
+      <div class="legend-ctrl">
+        <label>d max (Å)</label>
+        <input type="range" id="sPkDmax" min="0.5" max="20" value="20" step="0.1">
+        <span id="vPkDmax">20.0</span>
+      </div>
+      <div id="legend-sep2" style="height:.5px;background:rgba(100,150,255,.2);margin:5px 0;"></div>
+      <div class="legend-section">OPTIONS</div>
+      <div class="legend-ctrl">
+        <label>scale size by weight</label>
+        <input type="checkbox" id="chkPkScale">
+      </div>
+    </div>
+  </div>
+
   <div id="pip">
     <div id="pip-topbar">
       <div id="pip-resize-handle" title="resize">
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M1 11L11 1M1 6L6 1M1 11L6 11" stroke="white" stroke-width="1.3"/></svg>
       </div>
-      <span id="pip-label">YZ @ x=0.50</span>
+      <span id="pip-label">YZ @ x=0.00</span>
       <button class="pip-btn" id="homeBtn" title="reset zoom &amp; pan">
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
           <path d="M1 7L7 2L13 7" stroke="rgba(180,200,255,.75)" stroke-width="1.3" stroke-linejoin="round"/>
@@ -102,6 +202,7 @@ body{background:#07070e;color:#ccc;font-family:monospace;overflow:hidden;}
     <div id="pip-readout"><span id="readoutXY">—</span><span id="readoutVal">—</span></div>
     <div id="pip-measure-info"></div>
   </div>
+
   <div id="overlay">
     <div class="cr"><label>levels</label><input type="range" id="sLvls" min="2" max="14" value="7" step="1"><span id="vLvls">7</span></div>
     <div class="cr"><label>iso min</label><input type="range" id="sMin" min="5" max="70" value="18" step="1"><span id="vMin">18%</span></div>
@@ -114,6 +215,7 @@ body{background:#07070e;color:#ccc;font-family:monospace;overflow:hidden;}
     </div>
     <div class="cr"><label>plane</label><input type="checkbox" id="chkPlane" checked></div>
     <div class="cr"><label>spin</label><input type="checkbox" id="chkRot" checked></div>
+    <div class="cr"><label>peak r</label><input type="range" id="sPkR" min="2" max="20" value="6" step="1"><span id="vPkR">6</span></div>
     <div class="cr"><label>pip size</label><input type="range" id="sPip" min="100" max="500" value="220" step="10"><span id="vPip">220</span></div>
   </div>
 </div>
@@ -121,18 +223,155 @@ body{background:#07070e;color:#ccc;font-family:monospace;overflow:hidden;}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
 'use strict';
+
+// ── Peaks data ───────────────────────────────────────────────────────────────
+let peaksData = null;
+let peakSpheres = [];
+
+// ── Pair colour palette ───────────────────────────────────────────────────────
+// 10 visually distinct colours for all same-element and cross-element pairs
+// among H, C, N, O, S, P, Cl, Br, etc. Assigned on first load by sorted pair key.
+const PAIR_PALETTE = [
+  '#44ffcc', // 0  C-C   teal
+  '#4488ff', // 1  C-N   blue
+  '#ff6644', // 2  C-O   orange-red
+  '#aaaaaa', // 3  C-H   grey
+  '#cc44ff', // 4  N-N   purple
+  '#ff44aa', // 5  N-O   pink
+  '#888888', // 6  N-H   dark grey
+  '#ffdd00', // 7  O-O   yellow
+  '#ff9933', // 8  O-H   amber
+  '#556677', // 9  H-H   muted blue-grey
+  '#00ffaa', // 10 extra
+  '#ff3366', // 11 extra
+  '#33ddff', // 12 extra
+  '#ffaa00', // 13 extra
+  '#aa44ff', // 14 extra
+  '#44ff66', // 15 extra
+];
+let pairColorMap = {};    // "C-C" → hex string
+let pairEnabledMap = {};  // "C-C" → bool
+let legendCollapsed = false;
+
+function canonPair(e1, e2){
+  // Canonical sorted pair key, e.g. "C-O" not "O-C"
+  return [e1, e2].sort().join('-');
+}
+
+function elemFromLabel(lbl){
+  // Strip trailing digits to get element: "C1" → "C", "H2p" → "H"
+  // Works for most crystallographic labels; fallback to first char(s)
+  const m = lbl.match(/^([A-Z][a-z]?)/);
+  return m ? m[1] : lbl[0];
+}
+
+function buildPairMaps(){
+  pairColorMap = {};
+  pairEnabledMap = {};
+  if(!peaksData) return;
+  let idx = 0;
+  // First pass: collect unique pairs in order of appearance
+  peaksData.forEach(pk=>{
+    if(pk.label === 'origin') return;
+    const e1 = elemFromLabel(pk.atom1);
+    const e2 = elemFromLabel(pk.atom2);
+    const key = canonPair(e1, e2);
+    if(!(key in pairColorMap)){
+      pairColorMap[key] = PAIR_PALETTE[idx % PAIR_PALETTE.length];
+      pairEnabledMap[key] = true;
+      idx++;
+    }
+  });
+}
+
+function pairKey(pk){
+  if(pk.label === 'origin') return 'origin';
+  const e1 = elemFromLabel(pk.atom1);
+  const e2 = elemFromLabel(pk.atom2);
+  return canonPair(e1, e2);
+}
+
+function pkColor(pk){
+  if(pk.label === 'origin') return '#ffffff';
+  const key = pairKey(pk);
+  return pairColorMap[key] || '#44ffcc';
+}
+
+function pkEnabled(pk){
+  if(pk.label === 'origin') return true;
+  const key = pairKey(pk);
+  if(!(key in pairEnabledMap)) return true;
+  return pairEnabledMap[key];
+}
+
+function pkInDistRange(pk){
+  if(pk.label === 'origin') return true;
+  const dmin = parseFloat(document.getElementById('sPkDmin').value);
+  const dmax = parseFloat(document.getElementById('sPkDmax').value);
+  return pk.distance >= dmin && pk.distance <= dmax;
+}
+
+function toggleLegend(){
+  legendCollapsed = !legendCollapsed;
+  document.getElementById('legend-body').classList.toggle('collapsed', legendCollapsed);
+  document.getElementById('legend-toggle').textContent = legendCollapsed ? 'show' : 'hide';
+}
+
+function hexToThree(hex){
+  return parseInt(hex.replace('#',''), 16);
+}
+
+// Atomic numbers for Z*Z weight computation in JS
+const ATOMIC_Z = {H:1,He:2,Li:3,Be:4,B:5,C:6,N:7,O:8,F:9,Ne:10,
+  Na:11,Mg:12,Al:13,Si:14,P:15,S:16,Cl:17,Ar:18,K:19,Ca:20,
+  Fe:26,Cu:29,Zn:30,Br:35,I:53};
+function pairZZ(key){
+  // key is like "C-O" or "Na-Cl"
+  const [e1,e2] = key.split('-');
+  const z1 = ATOMIC_Z[e1] || 6;
+  const z2 = ATOMIC_Z[e2] || 6;
+  return z1*z2;
+}
+
+function buildLegendRows(){
+  const container = document.getElementById('pair-rows');
+  container.innerHTML = '';
+  // Sort pairs by Z*Z descending — computed from element symbols
+  const sortedPairs = Object.keys(pairColorMap).sort((a,b)=>pairZZ(b)-pairZZ(a));
+  sortedPairs.forEach(key=>{
+    const w = pairZZ(key);
+    const color = pairColorMap[key];
+    const row = document.createElement('div');
+    row.className = 'pair-row';
+    row.innerHTML = `
+      <div class="pair-swatch" style="background:${color};opacity:0.85;"></div>
+      <span class="pair-label">${key}</span>
+      <span class="pair-zz">Z²=${w}</span>
+      <input type="checkbox" class="pair-cb" data-pair="${key}" ${pairEnabledMap[key]?'checked':''}>
+    `;
+    row.querySelector('input').addEventListener('change', function(){
+      pairEnabledMap[this.dataset.pair] = this.checked;
+      buildPeakSpheres();
+      redrawSlice2D();
+    });
+    container.appendChild(row);
+  });
+  // Update dmax range based on actual data
+  if(peaksData && peaksData.length > 1){
+    const maxD = Math.max(...peaksData.filter(p=>p.label!=='origin').map(p=>p.distance));
+    const dmax = document.getElementById('sPkDmax');
+    dmax.max = Math.ceil(maxD + 1);
+    dmax.value = dmax.max;
+    document.getElementById('vPkDmax').textContent = parseFloat(dmax.value).toFixed(1);
+  }
+}
+
 // ── File loading ──────────────────────────────────────────────────────────
 let volumeData=null,volNX=0,volNY=0,volNZ=0,volLabel='';
 function parsePatt(buffer){
   const dv=new DataView(buffer);
-
-  // const hdrLen=dv.getUint32(0,true);
-  // const hdr=new TextDecoder().decode(new Uint8Array(buffer,4,hdrLen)).trim().split('\n');
-const hdrLen = dv.getUint32(0,true);
-const hdr = new TextDecoder().decode(
-    new Uint8Array(buffer,4,hdrLen)
-).trim().split('\n');
-
+  const hdrLen=dv.getUint32(0,true);
+  const hdr=new TextDecoder().decode(new Uint8Array(buffer,4,hdrLen)).trim().split('\n');
   if(hdr[0].trim()!=='PATT1')throw new Error('Not a valid .patt file');
   const[nx,ny,nz]=hdr[1].trim().split(' ').map(Number);
   return{data:new Float32Array(new Float32Array(buffer,4+hdrLen,nx*ny*nz)),nx,ny,nz,label:hdr[2]?.trim()||'unknown'};
@@ -153,6 +392,26 @@ const dropzone=document.getElementById('dropzone'),dropbox=document.getElementBy
 ['dragleave','dragend'].forEach(ev=>dropzone.addEventListener(ev,()=>dropbox.classList.remove('over')));
 dropzone.addEventListener('drop',e=>{e.preventDefault();dropbox.classList.remove('over');const f=e.dataTransfer.files[0];if(!f)return;document.getElementById('status').textContent='Loading '+f.name+'...';f.arrayBuffer().then(buf=>loadBuffer(buf,f.name));});
 document.getElementById('fileInput').addEventListener('change',function(){const f=this.files[0];if(!f)return;f.arrayBuffer().then(buf=>loadBuffer(buf,f.name));});
+
+// Peaks file loader
+document.getElementById('peaksInput').addEventListener('change',function(){
+  const f=this.files[0];if(!f)return;
+  f.text().then(txt=>{
+    try{
+      peaksData=JSON.parse(txt);
+      // ensure origin is labelled
+      peaksData.forEach(p=>{
+        if(!p.label) p.label=p.atom1+'-'+p.atom2;
+      });
+      buildPairMaps();
+      buildLegendRows();
+      buildPeakSpheres();
+      redrawSlice2D();
+      document.getElementById('fileinfo').textContent+=`  |  ${peaksData.length} peaks`;
+    }catch(e){alert('Failed to parse peaks JSON: '+e.message);}
+  });
+});
+
 document.getElementById('demoBtn').onclick=function(){
   const N=48;const data=new Float32Array(N*N*N);
   function dvi(i,j,k){return k*N*N+j*N+i;}
@@ -177,7 +436,14 @@ function extractSlice(ax,s){
   }
   return{data:out,na:A,nb:B};
 }
-function sliceTo3D(ax,sf,f1,f2){const h=f1-.5,v=f2-.5,p=sf-.5;if(ax==='x')return new THREE.Vector3(p,h,v);if(ax==='y')return new THREE.Vector3(h,p,v);return new THREE.Vector3(h,v,p);}
+// fractional [0,1) → viewer [-0.5, 0.5]
+function fracToViewer(f){return f-0.5;}
+function sliceTo3D(ax,sf,f1,f2){
+  const p=fracToViewer(sf),h=fracToViewer(f1),v=fracToViewer(f2);
+  if(ax==='x')return new THREE.Vector3(p,h,v);
+  if(ax==='y')return new THREE.Vector3(h,p,v);
+  return new THREE.Vector3(h,v,p);
+}
 
 // ── Marching squares ──────────────────────────────────────────────────────
 function marchingSquares(grid,nx,ny,thr){
@@ -222,32 +488,170 @@ const c3d=document.getElementById('c3d');
 const renderer=new THREE.WebGLRenderer({canvas:c3d,antialias:true,alpha:true});
 renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
 const scene=new THREE.Scene();
-const cam=new THREE.PerspectiveCamera(42,2,.01,100);
-cam.position.set(0,0,2.8);cam.lookAt(0,0,0);
-function resizeR(){const W=window.innerWidth,H=window.innerHeight;renderer.setSize(W,H);cam.aspect=W/H;cam.updateProjectionMatrix();}
+// Orthographic camera — true isometric, no perspective distortion
+// frustum half-size: controls zoom. Larger = zoomed out.
+let orthoSize = 0.85;
+const cam=new THREE.OrthographicCamera(-orthoSize,orthoSize,orthoSize,-orthoSize,0.01,100);
+cam.position.set(0,0,5);
+
+let camTarget=new THREE.Vector3(0,0,0);
+function updateCamLookAt(){cam.lookAt(camTarget);}
+updateCamLookAt();
+
+function resizeR(){
+  const W=window.innerWidth,H=window.innerHeight;
+  renderer.setSize(W,H);
+  const aspect=W/H;
+  cam.left=-orthoSize*aspect; cam.right=orthoSize*aspect;
+  cam.top=orthoSize; cam.bottom=-orthoSize;
+  cam.updateProjectionMatrix();
+}
 window.addEventListener('resize',()=>{resizeR();redrawSlice2D();});
 scene.add(new THREE.AmbientLight(0xffffff,1.0));
 const pivot=new THREE.Group();scene.add(pivot);
+
+// ── Box wireframe ─────────────────────────────────────────────────────────
 pivot.add(new THREE.Mesh(new THREE.BoxGeometry(1,1,1),new THREE.MeshBasicMaterial({color:0x223344,wireframe:true,transparent:true,opacity:.18})));
-[[1,0,0,0xff3355],[0,1,0,0x33dd66],[0,0,1,0x3388ff]].forEach(([x,y,z,c])=>{const g=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-.5,-.5,-.5),new THREE.Vector3(-.5+x*.65,-.5+y*.65,-.5+z*.65)]);pivot.add(new THREE.Line(g,new THREE.LineBasicMaterial({color:c,transparent:true,opacity:.55})));});
+
+// ── Axes — thicker, from origin (0,0,0) in viewer = (0.5,0.5,0.5) frac ──
+// In viewer space, (0,0,0) is already the centre of the cube [-0.5,0.5]³
+// We draw thick axes as thin cylinders so they show up properly
+
+function makeCylAxis(dir, color, len=0.52){
+  // dir: THREE.Vector3 unit direction
+  // A cylinder by default points along Y. Rotate it to point along dir.
+  const geo = new THREE.CylinderGeometry(0.006, 0.006, len, 8);
+  const mat = new THREE.MeshBasicMaterial({color, transparent:true, opacity:0.85});
+  const mesh = new THREE.Mesh(geo, mat);
+  // offset: centre of cylinder is at len/2 along dir from origin
+  mesh.position.copy(dir.clone().multiplyScalar(len/2));
+  // rotate Y→dir
+  const yAxis = new THREE.Vector3(0,1,0);
+  const q = new THREE.Quaternion().setFromUnitVectors(yAxis, dir.clone().normalize());
+  mesh.quaternion.copy(q);
+  return mesh;
+}
+
+function makeArrowHead(dir, color, len=0.52){
+  const geo = new THREE.ConeGeometry(0.018, 0.06, 8);
+  const mat = new THREE.MeshBasicMaterial({color, transparent:true, opacity:0.9});
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.copy(dir.clone().multiplyScalar(len + 0.03));
+  const yAxis = new THREE.Vector3(0,1,0);
+  const q = new THREE.Quaternion().setFromUnitVectors(yAxis, dir.clone().normalize());
+  mesh.quaternion.copy(q);
+  return mesh;
+}
+
+const axisGroup = new THREE.Group();
+const axDirs = [
+  {dir: new THREE.Vector3(1,0,0), color: 0xff3355, label: 'a'},
+  {dir: new THREE.Vector3(0,1,0), color: 0x33dd66, label: 'b'},
+  {dir: new THREE.Vector3(0,0,1), color: 0x3388ff, label: 'c'},
+];
+axDirs.forEach(({dir,color})=>{
+  axisGroup.add(makeCylAxis(dir, color));
+  axisGroup.add(makeArrowHead(dir, color));
+});
+pivot.add(axisGroup);
+
+// Axis labels as sprites
+function makeTextSprite(text, color){
+  const canvas = document.createElement('canvas');
+  canvas.width=64;canvas.height=64;
+  const ctx=canvas.getContext('2d');
+  ctx.font='bold 36px monospace';
+  ctx.fillStyle=color;
+  ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillText(text,32,32);
+  const tex=new THREE.CanvasTexture(canvas);
+  const mat=new THREE.SpriteMaterial({map:tex,transparent:true,depthTest:false});
+  const sprite=new THREE.Sprite(mat);
+  sprite.scale.set(0.12,0.12,0.12);
+  return sprite;
+}
+const labelColors=['#ff5566','#33dd66','#4499ff'];
+const labelOffsets=[
+  new THREE.Vector3(0.65,0,0),
+  new THREE.Vector3(0,0.65,0),
+  new THREE.Vector3(0,0,0.65),
+];
+['a','b','c'].forEach((lbl,i)=>{
+  const sp=makeTextSprite(lbl, labelColors[i]);
+  sp.position.copy(labelOffsets[i]);
+  axisGroup.add(sp);
+});
+
+// ── Slice plane ───────────────────────────────────────────────────────────
 const planeGroup=new THREE.Group();
 planeGroup.add(new THREE.Mesh(new THREE.PlaneGeometry(1,1),new THREE.MeshBasicMaterial({color:0x88aaff,transparent:true,opacity:.08,side:THREE.DoubleSide,depthWrite:false})));
 const bpts2=[new THREE.Vector3(-.5,-.5,0),new THREE.Vector3(.5,-.5,0),new THREE.Vector3(.5,.5,0),new THREE.Vector3(-.5,.5,0),new THREE.Vector3(-.5,-.5,0)];
 planeGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(bpts2),new THREE.LineBasicMaterial({color:0x88ccff,transparent:true,opacity:.6})));
 pivot.add(planeGroup);
+
 function updatePlane3D(){
   const ax=document.getElementById('selSliceAxis').value;
   const s=parseInt(document.getElementById('sSlicePos').value);
   const Ns=ax==='x'?volNX:ax==='y'?volNY:volNZ;
-  const pos=Ns>1?s/(Ns-1)-.5:0;
+  const frac=Ns>1?s/(Ns-1):0; // [0,1]
+  const pos=fracToViewer(frac); // [-0.5, 0.5]
   planeGroup.rotation.set(0,0,0);planeGroup.position.set(0,0,0);
   if(ax==='x'){planeGroup.rotation.y=Math.PI/2;planeGroup.position.x=pos;}
   else if(ax==='y'){planeGroup.rotation.x=Math.PI/2;planeGroup.position.y=pos;}
   else{planeGroup.position.z=pos;}
   planeGroup.visible=document.getElementById('chkPlane').checked;
   const axNames={x:'YZ',y:'XZ',z:'XY'};
-  document.getElementById('pip-label').textContent=`${axNames[ax]} @ ${ax}=${(pos+.5).toFixed(2)}`;
+  const fStr=(frac-0.5).toFixed(2); // show as fractional -0.5..+0.5
+  document.getElementById('pip-label').textContent=`${axNames[ax]} @ ${ax}=${fStr}`;
+  // Update slice pos label
+  document.getElementById('vSlicePos').textContent=fStr;
 }
+
+// ── Peak spheres ──────────────────────────────────────────────────────────
+let peakGroup=null;
+
+// Weight -> radius scaling
+// Scaling: radius = rBase * weight^PK_W_EXP  (no additive offset)
+// weight = ZZ/ZZmax in [0,1]; O-O=1.0, H-H=0.016
+// exp=1.0: true linear (1:64 ratio), exp=0.5: sqrt (1:8 ratio, H peaks still visible)
+const PK_W_EXP = 1.0;
+const PK_W_FLOOR = 0.01;  // minimum scale so zero-weight peaks aren't invisible
+
+function peakRadiusScale(weight){
+  // Unchecked: uniform size 1.0 for all peaks.
+  // Checked: radius proportional to (ZZ/ZZmax)^exp — true to Patterson physics.
+  //   O-O (weight=1.0) → scale=1.0 (full rBase)
+  //   H-H (weight=0.016) → scale=0.016 (tiny dot, linear) or 0.125 (sqrt)
+  const scaled = document.getElementById('chkPkScale') && document.getElementById('chkPkScale').checked;
+  if(!scaled || weight==null) return 1.0;
+  return Math.max(PK_W_FLOOR, Math.pow(Math.max(0, Math.min(1, weight)), PK_W_EXP));
+}
+
+function buildPeakSpheres(){
+  if(peakGroup){pivot.remove(peakGroup);peakGroup.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material)o.material.dispose();});}
+  peakGroup=new THREE.Group();
+  peakSpheres=[];
+  if(!peaksData)return;
+  const rBase=parseInt(document.getElementById('sPkR').value)/1000;
+  peaksData.forEach(pk=>{
+    if(!pkEnabled(pk) || !pkInDistRange(pk)) return;
+    const x=fracToViewer(pk.u), y=fracToViewer(pk.v), z=fracToViewer(pk.w);
+    const isOrigin=(pk.label==='origin');
+    const color = hexToThree(pkColor(pk));
+    const opacity = isOrigin ? 0.9 : (pk.involves_H ? 0.45 : 0.78);
+    const r = isOrigin ? rBase : rBase * peakRadiusScale(pk.weight);
+    const geo=new THREE.SphereGeometry(r,10,10);
+    const mat=new THREE.MeshBasicMaterial({color,transparent:true,opacity});
+    const mesh=new THREE.Mesh(geo,mat);
+    mesh.position.set(x,y,z);
+    mesh.userData={peak:pk,isOrigin};
+    peakGroup.add(mesh);
+    peakSpheres.push(mesh);
+  });
+  pivot.add(peakGroup);
+}
+
+// ── Contours ──────────────────────────────────────────────────────────────
 let contourGroup=null,intersectGroup=null,globalOpacity=.72;
 function buildContours(){
   if(!volumeData)return;
@@ -282,6 +686,7 @@ function buildContours(){
   }
   if(stackAxis==='z'||stackAxis==='zx')addStack('z');
   if(stackAxis==='x'||stackAxis==='zx')addStack('x');
+  // Highlighted intersection slice
   const Ns2=sliceAx==='x'?volNX:sliceAx==='y'?volNY:volNZ;
   const frac2=Ns2>1?sliceIdx/(Ns2-1):0;
   const{data:iSl,na:iNa,nb:iNb}=extractSlice(sliceAx,sliceIdx);
@@ -297,14 +702,17 @@ function buildContours(){
   updatePlane3D();redrawSlice2D();
 }
 
-// ── 2D state ──────────────────────────────────────────────────────────────
+// ── 2D slice ──────────────────────────────────────────────────────────────
 let zoom2d=1,pan2dx=0,pan2dy=0,currentSlice=null;
-// Ruler: 0=idle, 1=waiting for P2, 2=complete
 let measureMode=false,measState=0,measP1=null,measP2=null,measLive=null;
 let panDragging=false,panStart={x:0,y:0},panOrigin={x:0,y:0};
 let rightDragging=false,rightStart={x:0,y:0},rightOrigin={x:0,y:0};
 
 function resetZoomPan(){zoom2d=1;pan2dx=0;pan2dy=0;redrawSlice2D();}
+
+// Convert pixel fraction [0,1] → fractional coord [-0.5, +0.5]
+function pixFracToFrac(f){return f - 0.5;}
+
 function canvasToFrac(e){
   const wrap=document.getElementById('pip-canvas-wrap'),r=wrap.getBoundingClientRect(),W=wrap.clientWidth;
   return{fx:Math.max(0,Math.min(1,(e.clientX-r.left-pan2dx)/(W*zoom2d))),fy:Math.max(0,Math.min(1,(e.clientY-r.top-pan2dy)/(W*zoom2d)))};
@@ -324,7 +732,13 @@ function redrawSlice2D(){
   currentSlice={data:sl,na,nb};
   ctx.save();ctx.translate(pan2dx,pan2dy);ctx.scale(zoom2d,zoom2d);
   const tw=W/na+1,th=W/nb+1;
-  for(let i=0;i<na;i++)for(let j=0;j<nb;j++){const[r,g,b]=hotRGB(sl[i*nb+j]);ctx.fillStyle=`rgb(${r},${g},${b})`;ctx.fillRect(i/na*W,j/nb*W,tw,th);}
+
+  // Draw heatmap
+  for(let i=0;i<na;i++)for(let j=0;j<nb;j++){
+    const[r,g,b]=hotRGB(sl[i*nb+j]);ctx.fillStyle=`rgb(${r},${g},${b})`;ctx.fillRect(i/na*W,j/nb*W,tw,th);
+  }
+
+  // Contour lines
   const nLvls=parseInt(document.getElementById('sLvls').value);
   const tMin=parseInt(document.getElementById('sMin').value)/100;
   const tMax=parseInt(document.getElementById('sMax').value)/100;
@@ -334,36 +748,73 @@ function redrawSlice2D(){
     for(const[x1,y1,x2,y2]of marchingSquares(sl,na,nb,thr)){ctx.moveTo(x1*W,y1*W);ctx.lineTo(x2*W,y2*W);}
     ctx.stroke();
   }
-  ctx.restore();
-  // axis labels
-  ctx.fillStyle='rgba(255,255,255,.35)';ctx.font='10px monospace';
-  const axLbls={x:['Y','Z'],y:['X','Z'],z:['X','Y']};const[la,lb]=axLbls[ax];
-  ctx.fillText(la+'→',W-22,W-4);ctx.fillText(lb+'↓',3,12);
 
-  // measure overlay
+  // Peaks overlay in 2D
+  if(peaksData){
+    const pkR=parseInt(document.getElementById('sPkR').value);
+    const sliceS=parseInt(document.getElementById('sSlicePos').value);
+    const Ns=ax==='x'?volNX:ax==='y'?volNY:volNZ;
+    const sliceFrac=Ns>1?sliceS/(Ns-1):0; // [0,1]
+    const tol=1.5/(Ns>1?Ns-1:1); // ~1.5 pixels in frac space
+
+    peaksData.forEach(pk=>{
+      if(!pkEnabled(pk)||!pkInDistRange(pk))return;
+      const sliceCoord=ax==='x'?pk.u:ax==='y'?pk.v:pk.w;
+      if(Math.abs(sliceCoord-sliceFrac)>tol)return;
+      const fa=ax==='x'?pk.v:pk.u;
+      const fb=ax==='x'?pk.w:(ax==='y'?pk.w:pk.v);
+      const pxc=fa*W, pyc=fb*W;
+      const isOrigin=(pk.label==='origin');
+      // Use same per-pair colour as 3D view
+      const hexCol=pkColor(pk);
+      const rr=parseInt(hexCol.slice(1,3),16);
+      const gg=parseInt(hexCol.slice(3,5),16);
+      const bb=parseInt(hexCol.slice(5,7),16);
+      const strokeA=isOrigin?0.95:(pk.involves_H?0.55:0.9);
+      const fillA=isOrigin?0.3:0.18;
+      const scale2d = isOrigin ? 1.0 : peakRadiusScale(pk.weight);
+      ctx.beginPath();
+      ctx.arc(pxc,pyc,(pkR*scale2d)/zoom2d,0,Math.PI*2);
+      ctx.strokeStyle=`rgba(${rr},${gg},${bb},${strokeA})`;
+      ctx.fillStyle=`rgba(${rr},${gg},${bb},${fillA})`;
+      ctx.lineWidth=1.5/zoom2d;
+      ctx.fill();ctx.stroke();
+    });
+  }
+
+  // Axis labels — show fractional coords
+  const axLbls={x:['v','w'],y:['u','w'],z:['u','v']};
+  const[la,lb]=axLbls[ax];
+  ctx.restore(); // draw labels without zoom transform for clean text
+  ctx.fillStyle='rgba(255,255,255,.4)';ctx.font='10px monospace';
+  ctx.fillText(la+'→  [−0.5 → +0.5]',4,W-4);
+  ctx.fillText(lb+'↓',3,12);
+
+  // Measure overlay
   const toS=f=>({x:f.fx*W*zoom2d+pan2dx,y:f.fy*W*zoom2d+pan2dy});
   if(measP1){
     const ss=toS(measP1);
     const p1i=fracToPx(measP1.fx,na),p1j=fracToPx(measP1.fy,nb);
+    // Show fractional coords in labels
+    const p1fa=pixFracToFrac(measP1.fx).toFixed(2),p1fb=pixFracToFrac(measP1.fy).toFixed(2);
     ctx.fillStyle='#44ff88';ctx.beginPath();ctx.arc(ss.x,ss.y,3.5,0,Math.PI*2);ctx.fill();
-    drawLabel(ctx,`(${p1i},${p1j})`,ss.x,ss.y,{offsetX:-6,offsetY:-2,align:'right',fontSize:9});
+    drawLabel(ctx,`(${p1fa},${p1fb})`,ss.x,ss.y,{offsetX:-6,offsetY:-2,align:'right',fontSize:9});
     const endF=measP2||measLive;
     if(endF){
       const se=toS(endF);
-      const p2i=fracToPx(endF.fx,na),p2j=fracToPx(endF.fy,nb);
-      const di=p2i-p1i,dj=p2j-p1j,pxD=Math.sqrt(di*di+dj*dj);
+      const p2fa=pixFracToFrac(endF.fx).toFixed(2),p2fb=pixFracToFrac(endF.fy).toFixed(2);
+      const di=fracToPx(endF.fx,na)-p1i,dj=fracToPx(endF.fy,nb)-p1j,pxD=Math.sqrt(di*di+dj*dj);
       ctx.strokeStyle='#44ff88';ctx.lineWidth=1.8;ctx.setLineDash([5,3]);
       ctx.beginPath();ctx.moveTo(ss.x,ss.y);ctx.lineTo(se.x,se.y);ctx.stroke();ctx.setLineDash([]);
       ctx.fillStyle='#44ff88';ctx.beginPath();ctx.arc(se.x,se.y,3.5,0,Math.PI*2);ctx.fill();
       const ex_off=se.x>=ss.x?8:-8,ey_off=se.y>=ss.y?14:-6;
-      drawLabel(ctx,`(${p2i},${p2j})`,se.x,se.y,{offsetX:ex_off,offsetY:ey_off,fontSize:9});
-      const mx=(ss.x+se.x)/2,my=(ss.y+se.y)/2;
+      drawLabel(ctx,`(${p2fa},${p2fb})`,se.x,se.y,{offsetX:ex_off,offsetY:ey_off,fontSize:9});
+      const mx2=(ss.x+se.x)/2,my2=(ss.y+se.y)/2;
       const lx=se.x-ss.x,ly=se.y-ss.y,ll=Math.sqrt(lx*lx+ly*ly)||1;
-      drawLabel(ctx,`${pxD.toFixed(1)} px`,mx,my,{offsetX:-ly/ll*16,offsetY:lx/ll*16+10,align:'center',fontSize:10});
+      drawLabel(ctx,`${pxD.toFixed(1)} px`,mx2,my2,{offsetX:-ly/ll*16,offsetY:lx/ll*16+10,align:'center',fontSize:10});
       document.getElementById('pip-measure-info').style.display='block';
-      document.getElementById('pip-measure-info').textContent=`(${p1i},${p1j})→(${p2i},${p2j})  ${pxD.toFixed(1)} px`;
+      document.getElementById('pip-measure-info').textContent=`(${p1fa},${p1fb})→(${p2fa},${p2fb})  ${pxD.toFixed(1)} px`;
     }
-    // waiting ring
     if(measState===1&&!measLive){ctx.strokeStyle='rgba(68,255,136,.35)';ctx.lineWidth=1;ctx.beginPath();ctx.arc(ss.x,ss.y,8,0,Math.PI*2);ctx.stroke();}
   }
 }
@@ -376,7 +827,9 @@ wrap.addEventListener('mousemove',e=>{
     const gi=Math.min(currentSlice.na-1,Math.floor(fx*(currentSlice.na-1)));
     const gj=Math.min(currentSlice.nb-1,Math.floor(fy*(currentSlice.nb-1)));
     const v=currentSlice.data[gi*currentSlice.nb+gj];
-    document.getElementById('readoutXY').textContent=`(${gi},${gj})`;
+    // Show fractional coords [-0.5, +0.5]
+    const fa=pixFracToFrac(fx).toFixed(2), fb=pixFracToFrac(fy).toFixed(2);
+    document.getElementById('readoutXY').textContent=`(${fa}, ${fb})`;
     document.getElementById('readoutVal').textContent=`ρ=${v.toFixed(3)}`;
   }
   if(measureMode&&measState===1&&measP1){measLive=canvasToFrac(e);redrawSlice2D();}
@@ -427,33 +880,167 @@ window.addEventListener('mouseup',()=>{pipMove=false;pipRes=false;});
 document.getElementById('sPip').oninput=function(){const s=+this.value;pip.style.width=s+'px';document.getElementById('pip-canvas-wrap').style.height=s+'px';document.getElementById('vPip').textContent=s;redrawSlice2D();};
 document.getElementById('pip-canvas-wrap').style.height='220px';
 
-// ── Trackball ─────────────────────────────────────────────────────────────
-function projectOnSphere(x,y,W,H){const nx=(2*x-W)/Math.min(W,H),ny=-(2*y-H)/Math.min(W,H);const d=Math.sqrt(nx*nx+ny*ny);const nz=d<=1/Math.SQRT2?Math.sqrt(1-d*d):1/(2*d);const len=Math.sqrt(nx*nx+ny*ny+nz*nz);return new THREE.Vector3(nx/len,ny/len,nz/len);}
-let isDrag=false,lastSph=null,autoRot=true;
+// ── Trackball — rotation + shift-drag pan + scroll zoom ──────────────────
+function projectOnSphere(x,y,W,H){
+  const nx=(2*x-W)/Math.min(W,H),ny=-(2*y-H)/Math.min(W,H);
+  const d=Math.sqrt(nx*nx+ny*ny);
+  const nz=d<=1/Math.SQRT2?Math.sqrt(1-d*d):1/(2*d);
+  const len=Math.sqrt(nx*nx+ny*ny+nz*nz);
+  return new THREE.Vector3(nx/len,ny/len,nz/len);
+}
+
+let isDrag=false,isPan=false,lastSph=null,lastPanPos=null,autoRot=true;
 const autoQ=new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),.004);
-c3d.addEventListener('mousedown',e=>{if(pip.contains(e.target))return;isDrag=true;autoRot=false;document.getElementById('chkRot').checked=false;const r=c3d.getBoundingClientRect();lastSph=projectOnSphere(e.clientX-r.left,e.clientY-r.top,r.width,r.height);c3d.style.cursor='grabbing';});
-window.addEventListener('mouseup',()=>{isDrag=false;c3d.style.cursor='grab';});
-window.addEventListener('mousemove',e=>{if(!isDrag||!lastSph||pipMove||pipRes||panDragging||rightDragging)return;const r=c3d.getBoundingClientRect();const cur=projectOnSphere(e.clientX-r.left,e.clientY-r.top,r.width,r.height);const axis=new THREE.Vector3().crossVectors(lastSph,cur);const dot=Math.max(-1,Math.min(1,lastSph.dot(cur)));if(axis.lengthSq()>1e-10)pivot.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(axis.normalize(),Math.acos(dot)*2.5));lastSph=cur;});
-c3d.addEventListener('wheel',e=>{cam.position.z=Math.max(.8,Math.min(7,cam.position.z+e.deltaY*.003));e.preventDefault();},{passive:false});
-function animate(){requestAnimationFrame(animate);if(autoRot)pivot.quaternion.premultiply(autoQ);renderer.render(scene,cam);}
+
+c3d.addEventListener('mousedown',e=>{
+  if(pip.contains(e.target))return;
+  autoRot=false;document.getElementById('chkRot').checked=false;
+  if(e.shiftKey||e.button===1){
+    // Pan: shift+LMB or middle mouse
+    isPan=true;lastPanPos={x:e.clientX,y:e.clientY};
+    c3d.style.cursor='move';
+  }else if(e.button===0){
+    isDrag=true;
+    const r=c3d.getBoundingClientRect();
+    lastSph=projectOnSphere(e.clientX-r.left,e.clientY-r.top,r.width,r.height);
+    c3d.style.cursor='grabbing';
+  }
+});
+window.addEventListener('mouseup',()=>{isDrag=false;isPan=false;c3d.style.cursor='grab';});
+window.addEventListener('mousemove',e=>{
+  if(pipMove||pipRes||panDragging||rightDragging)return;
+  if(isPan){
+    // Pan camera target in screen plane
+    const dx=e.clientX-lastPanPos.x, dy=e.clientY-lastPanPos.y;
+    lastPanPos={x:e.clientX,y:e.clientY};
+    const panSpeed=0.002*orthoSize*2;
+    // get camera right and up vectors
+    const right=new THREE.Vector3();
+    const up=new THREE.Vector3();
+    cam.getWorldDirection(new THREE.Vector3()); // ensure matrix updated
+    right.setFromMatrixColumn(cam.matrixWorld,0);
+    up.setFromMatrixColumn(cam.matrixWorld,1);
+    camTarget.addScaledVector(right,-dx*panSpeed);
+    camTarget.addScaledVector(up,dy*panSpeed);
+    updateCamLookAt();
+  }else if(isDrag&&lastSph){
+    const r=c3d.getBoundingClientRect();
+    const cur=projectOnSphere(e.clientX-r.left,e.clientY-r.top,r.width,r.height);
+    const axis=new THREE.Vector3().crossVectors(lastSph,cur);
+    const dot=Math.max(-1,Math.min(1,lastSph.dot(cur)));
+    if(axis.lengthSq()>1e-10)pivot.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(axis.normalize(),Math.acos(dot)*2.5));
+    lastSph=cur;
+  }
+});
+c3d.addEventListener('wheel',e=>{
+  const aspect=window.innerWidth/window.innerHeight;
+  orthoSize=Math.max(0.2,Math.min(3.0,orthoSize+e.deltaY*0.001));
+  cam.left=-orthoSize*aspect; cam.right=orthoSize*aspect;
+  cam.top=orthoSize; cam.bottom=-orthoSize;
+  cam.updateProjectionMatrix();
+  e.preventDefault();
+},{passive:false});
+c3d.style.cursor='grab';
+
+// ── Rotation sliders ──────────────────────────────────────────────────────
+function applyRotSliders(){
+  const rx=THREE.MathUtils.degToRad(parseFloat(document.getElementById('rX').value));
+  const ry=THREE.MathUtils.degToRad(parseFloat(document.getElementById('rY').value));
+  const rz=THREE.MathUtils.degToRad(parseFloat(document.getElementById('rZ').value));
+  document.getElementById('vRX').textContent=document.getElementById('rX').value+'°';
+  document.getElementById('vRY').textContent=document.getElementById('rY').value+'°';
+  document.getElementById('vRZ').textContent=document.getElementById('rZ').value+'°';
+  pivot.rotation.set(rx,ry,rz);
+  pivot.quaternion.setFromEuler(pivot.rotation);
+}
+['rX','rY','rZ'].forEach(id=>document.getElementById(id).addEventListener('input',applyRotSliders));
+
+// ── Raycasting for hover tooltips on peaks ────────────────────────────────
+const raycaster=new THREE.Raycaster();
+const mouse2d=new THREE.Vector2();
+const tooltip=document.getElementById('tooltip');
+c3d.addEventListener('mousemove',e=>{
+  if(!peakSpheres.length){tooltip.style.display='none';return;}
+  const r=c3d.getBoundingClientRect();
+  mouse2d.x=((e.clientX-r.left)/r.width)*2-1;
+  mouse2d.y=-((e.clientY-r.top)/r.height)*2+1;
+  raycaster.setFromCamera(mouse2d,cam);
+  const hits=raycaster.intersectObjects(peakSpheres);
+  if(hits.length){
+    const pk=hits[0].object.userData.peak;
+    const uf=(pk.u-0.5).toFixed(3),vf=(pk.v-0.5).toFixed(3),wf=(pk.w-0.5).toFixed(3);
+    let html=`<b>${pk.label||pk.atom1+'–'+pk.atom2}</b><br>`;
+    html+=`u=${uf}  v=${vf}  w=${wf}<br>`;
+    if(pk.distance!=null)html+=`d = ${pk.distance.toFixed(3)} Å`;
+    if(pk.weight_raw!=null)html+=`<br>Z² = ${pk.weight_raw}  (weight ${(pk.weight*100).toFixed(0)}%)`;
+    if(pk.involves_H)html+=`<br><span style="color:#ffaa44">involves H</span>`;
+    tooltip.innerHTML=html;
+    tooltip.style.display='block';
+    tooltip.style.left=(e.clientX+14)+'px';
+    tooltip.style.top=(e.clientY-10)+'px';
+  }else{
+    tooltip.style.display='none';
+  }
+});
+c3d.addEventListener('mouseleave',()=>tooltip.style.display='none');
+
+// ── Animate ───────────────────────────────────────────────────────────────
+function animate(){
+  requestAnimationFrame(animate);
+  if(autoRot)pivot.quaternion.premultiply(autoQ);
+  renderer.render(scene,cam);
+}
 animate();
 
 // ── Bindings ──────────────────────────────────────────────────────────────
 document.getElementById('chkRot').onchange=function(){autoRot=this.checked;};
 document.getElementById('chkPlane').onchange=updatePlane3D;
 function bind(id,valId,suffix,fn){document.getElementById(id).oninput=function(){document.getElementById(valId).textContent=this.value+suffix;fn();};}
-bind('sLvls','vLvls','',buildContours);bind('sMin','vMin','%',buildContours);bind('sMax','vMax','%',buildContours);bind('sSlices','vSlices','',buildContours);
+bind('sLvls','vLvls','',buildContours);
+bind('sMin','vMin','%',buildContours);
+bind('sMax','vMax','%',buildContours);
+bind('sSlices','vSlices','',buildContours);
 bind('sOpa','vOpa','%',()=>{globalOpacity=parseInt(document.getElementById('sOpa').value)/100;if(contourGroup)contourGroup.traverse(o=>{if(o.material)o.material.opacity=globalOpacity;});});
+bind('sPkR','vPkR','',()=>{buildPeakSpheres();redrawSlice2D();renderer.render(scene,cam);});
 document.getElementById('selAxis').onchange=buildContours;
 document.getElementById('sSlicePos').oninput=function(){
-  const ax=document.getElementById('selSliceAxis').value,Ns=ax==='x'?volNX:ax==='y'?volNY:volNZ;
-  document.getElementById('vSlicePos').textContent=(+this.value/(Ns-1)).toFixed(2);
   updatePlane3D();buildContours();
 };
+// Peak filter / legend bindings
+document.getElementById('sPkDmin').addEventListener('input',function(){
+  document.getElementById('vPkDmin').textContent=parseFloat(this.value).toFixed(1);
+  buildPeakSpheres();redrawSlice2D();
+});
+document.getElementById('sPkDmax').addEventListener('input',function(){
+  document.getElementById('vPkDmax').textContent=parseFloat(this.value).toFixed(1);
+  buildPeakSpheres();redrawSlice2D();
+});
+document.getElementById('chkPkScale').addEventListener('change',function(){
+  buildPeakSpheres();redrawSlice2D();renderer.render(scene,cam);
+});
+
+// Legend panel drag
+(function(){
+  const panel=document.getElementById('legend-panel');
+  const bar=document.getElementById('legend-topbar');
+  let drag=false,mx=0,my=0,ox=0,oy=0;
+  bar.addEventListener('mousedown',e=>{
+    if(e.target.id==='legend-toggle')return;
+    drag=true;mx=e.clientX;my=e.clientY;ox=panel.offsetLeft;oy=panel.offsetTop;
+    e.preventDefault();e.stopPropagation();
+  });
+  window.addEventListener('mousemove',e=>{
+    if(!drag)return;
+    panel.style.left=Math.max(0,ox+(e.clientX-mx))+'px';
+    panel.style.top=Math.max(0,oy+(e.clientY-my))+'px';
+    panel.style.right='auto';panel.style.bottom='auto';
+  });
+  window.addEventListener('mouseup',()=>{drag=false;});
+})();
+
 document.getElementById('selSliceAxis').onchange=function(){
   const ax=this.value,Ns=ax==='x'?volNX:ax==='y'?volNY:volNZ;
   const sl=document.getElementById('sSlicePos');sl.max=Ns-1;sl.value=Math.floor(Ns/2);
-  document.getElementById('vSlicePos').textContent=(.5).toFixed(2);
   resetZoomPan();updatePlane3D();buildContours();
 };
 </script>
