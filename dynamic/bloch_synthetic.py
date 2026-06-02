@@ -174,11 +174,8 @@ def make_system_bloch_synthetic(
     total_R = scan_R @ initial_R     # apply scan on top of initial
 
     # Optional cosine correction for thickness (beam path length)
-    # The "tilt" here is the angle away from the beam (z-axis after rotation).
-    # We use the angle between the rotated z-axis and the original z-axis.
-    rotated_z = total_R @ np.array([0, 0, 1])
-    tilt_angle = np.arccos(np.clip(np.dot(rotated_z, [0, 0, 1]), -1, 1))
-    thickness_nm_corr = thickness_nm / np.cos(tilt_angle)
+    tilt_rad = np.deg2rad(scan_angle)
+    thickness_nm_corr = thickness_nm / np.cos(tilt_rad)
 
     # ------------------------------------------------------------------
     # 2. Load and orient the crystal
