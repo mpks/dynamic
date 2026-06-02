@@ -118,6 +118,8 @@ class SpotsList:
             cif_file = '/home/marko/active/dd/data/2083844_biotin.cif'
         elif material == 'sulfoxide':
             cif_file = '/home/marko/stfc/data/dd/chiral/689270_sulfoxide.cif'
+        elif material == 'histidine':
+            cif_file = '/home/marko/active/dd/data/histidine_HCl_H2O.cif'
         else:
             raise ValueError('Unknown material: ', material)
         self.material = material

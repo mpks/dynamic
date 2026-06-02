@@ -232,7 +232,7 @@ def export_diff_patterson(spots_list,
     return outfile
 
 
-# ── Quick test with synthetic data ────────────────────────────────────
+# ── Quick test with synthetic data ──
 if __name__ == '__main__':
     import sys
 

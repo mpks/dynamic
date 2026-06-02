@@ -120,7 +120,7 @@ def _norm01(x: np.ndarray) -> np.ndarray:
     return x - mn
 
 
-# ── Patch dataset ─────────────────────────────────────────────────────────────
+# ── Patch dataset ───
 
 class PattersonPatchDataset(Dataset):
     """
@@ -135,7 +135,7 @@ class PattersonPatchDataset(Dataset):
     At inference: cal_predicted = obs - network(obs)
 
     Augmentation exploits Patterson symmetry:
-        P(u,v,w) = P(-u,-v,-w)   → inversion: flip all three axes simultaneously
+        P(u,v,w) = P(-u,-v,-w)  → inversion: flip all three axes simultaneously
         P(u,v,w) = P(-u,v,w) etc → individual axis flips (for orthorhombic/higher)
     For a general (triclinic) dataset only the inversion is guaranteed,
     so we use all 2³=8 combinations of axis flips (all valid by inversion symmetry
@@ -176,7 +176,7 @@ class PattersonPatchDataset(Dataset):
         target = torch.tensor(obs - cal, dtype=torch.float32).unsqueeze(0)  # correction
         return x, target
 
-    # ── Factory methods ────────────────────────────────────────────────────
+    # ── Factory methods ──
 
     @classmethod
     def from_patt_pairs(cls,
