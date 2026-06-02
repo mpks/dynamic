@@ -208,7 +208,7 @@ def make_system_bloch_synthetic(
           f"({thickness_nm_corr:.2f} nm, corrected for tilt)")
 
     out_str = (f"{image_index:06d}_z_{thickness_nm:05.1f}_nm"
-               f"_scan_{scan_angle:+.4f}_deg_kmax_{k_max:03d}")
+               f"_kmax_{k_max:03d}")
 
     frozen_phonons = abtem.FrozenPhonons(atoms,
                                          num_configs=num_phonon_configs,
