@@ -267,7 +267,8 @@ def make_system_bloch_synthetic(
     out_file = f"spots_bloch_{out_str}.npz"
     if output_path is not None:
         out_file = output_path + "/" + out_file
-    save_as_npz_phonon(reference_millers, mean_intensities, out_file)
+    save_as_npz_phonon(reference_millers, mean_intensities, out_file,
+                       positions=reference_positions)
 
     # Also save the geometry for this image so downstream scripts can
     # reconstruct which orientation was used
@@ -335,7 +336,8 @@ def plot_spots(all_pos, all_miller, intensities, out_str, top_spots=60,
     plt.close(fig)
 
 
-def save_as_npz_phonon(miller_indices, intensities, filename):
+def save_as_npz_phonon(miller_indices, intensities, filename,
+                       positions=None):
 
     h_all, k_all, l_all, millers_all = [], [], [], []
     for miller, intensity in zip(miller_indices, intensities):
@@ -344,10 +346,14 @@ def save_as_npz_phonon(miller_indices, intensities, filename):
         k_all.append(k)
         l_all.append(ll)
         millers_all.append([h, k, ll])
-    np.savez(filename,
-             h=h_all, k=k_all, l=l_all,
-             miller=millers_all,
-             intensity=list(intensities))
+    save_kwargs = dict(
+        h=h_all, k=k_all, l=l_all,
+        miller=millers_all,
+        intensity=list(intensities),
+    )
+    if positions is not None:
+        save_kwargs['positions'] = np.array(positions)
+    np.savez(filename, **save_kwargs)
 
 
 def _parse_args():
