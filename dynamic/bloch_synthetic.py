@@ -52,16 +52,6 @@ def main():
         phonon_seed=args.phonon_seed,
     )
 
-# ---------------------------------------------------------------------------
-# Synthetic geometry helpers
-# ---------------------------------------------------------------------------
-
-
-def random_unit_vector(rng: np.random.Generator) -> np.ndarray:
-    """Return a uniformly distributed random unit vector on the sphere."""
-    v = rng.standard_normal(3)
-    return v / np.linalg.norm(v)
-
 
 def random_rotation_matrix(rng: np.random.Generator) -> np.ndarray:
     """
@@ -99,7 +89,7 @@ def build_synthetic_geometry(seed: int):
     """
     rng = np.random.default_rng(seed)
     initial_R = random_rotation_matrix(rng)
-    axis = random_unit_vector(rng)
+    axis = np.array([0, 1, 0])
     thickness_nm = float(rng.uniform(20.0, 200.0))
     return initial_R, axis, thickness_nm
 

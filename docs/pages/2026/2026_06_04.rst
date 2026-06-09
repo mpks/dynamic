@@ -1,0 +1,43 @@
+
+04 Jun 2026 
+===============
+
+  :Attendees: M. Petrovic, D. Waterman
+
+............
+ Results
+............
+
+ - Implemented a synthetic data generator with abTEM (Bloch waves).
+   The script creates a system with random orientation and does a 
+   rotational scan. With resources on Scarf, we can generate 10-15 
+   datasets per day of a similar quality to the paracetamol data we
+   initially trained our GBT model on.
+
+ - Created a CBF exporter for simulated abTEM data. The synthetic data
+   can now be imported into DIALS, and we can index the spots and process
+   them in the same way as an experimentally measured dataset (Fig. 1).
+ - Corrected the first draft of the AutoED paper with David W.
+
+
+  .. list-table::
+   :widths: 33 33 33
+   :align: center
+
+   * - .. image:: ../../figs/synthetic_data.png
+          :class: zoomable
+          :alt: First
+     - 
+     - 
+
+   * - Fig. 1: A synthetic paracetamol data set generated with 
+       abTEM and imported into the DIALS image viewer. 
+     - 
+     - 
+
+............
+  Discussion
+............
+
+ - Instead of NPZ to CBF conversion, the abTEM scripts should output 
+   CBF files by default. 

@@ -1,0 +1,41 @@
+
+28 May 2026 
+===============
+
+  :Attendees: M. Petrovic, D. Waterman, E. Krissinel, D. McDonagh (zoom meeting)
+
+............
+ Results
+............
+
+ - Presented the first version of a standalone RLV viewer (Fig. 1).
+   The single HTML page can now parse expt and refl files and replicate
+   the functionality of the existing RL viewer present in DIALS. 
+
+
+  .. list-table::
+   :widths: 33 33 33
+   :align: center
+
+   * - .. image:: ../../figs/rlv_html_new.png
+          :class: zoomable
+          :alt: First
+     - 
+     - 
+
+   * - Fig. 1: New RL viewer standalone HTML page.
+     - 
+     - 
+
+............
+  Discussion
+............
+
+ - Link the expt and refl JavaScript parsers to the original GitHub
+   repository instead of copying them.
+ - Put it into the CCP4 repository, and add a README file that explains
+   functionality.
+ - Add the same license as DIALS (BSD 3.0).
+ - Add a warning dialog when the user imports nonsense data.
+ - We should focus more on generating synthetic data.
+
