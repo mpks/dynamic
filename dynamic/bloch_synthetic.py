@@ -292,16 +292,27 @@ def spots_to_image(
     image = np.zeros((npy, npx), dtype=np.float64)
     cx = npx / 2.0
     cy = npy / 2.0
+    # Correct forward projection: the scattered beam direction
+    # is s0 + rlp = (0, 0, k0) + (kx, ky, kz_lattice).
+    # The detector displacement is therefore:
+    #
+    #   dx =  kx / (k0 + kz_lattice) * L
+    #   dy = -ky / (k0 + kz_lattice) * L
+    #
+    # This is the exact inverse of what DIALS does when it
+    # back-projects a pixel to reciprocal space via s1 - s0.
+    # The previous code used sqrt(k0^2 - kx^2 - ky^2) as the
+    # denominator, which ignores the actual kz of the lattice
+    # point and places spots on the wrong pixels.
     k0 = 1.0 / wavelength_A
 
     for pos, cnt in zip(positions, intensities):
-        kx, ky = pos[0], pos[1]
-        kz_sq = k0**2 - kx**2 - ky**2
-        if kz_sq <= 0:
+        kx, ky, kz_lattice = pos[0], pos[1], pos[2]
+        kz_beam = k0 + kz_lattice
+        if kz_beam <= 0:
             continue
-        kz = np.sqrt(kz_sq)
-        dx = (kx / kz) * distance_mm
-        dy = -(ky / kz) * distance_mm
+        dx = (kx / kz_beam) * distance_mm
+        dy = -(ky / kz_beam) * distance_mm
         px_x = cx + dx / pixel_size_mm
         px_y = cy + dy / pixel_size_mm
         ix = int(round(px_x))
