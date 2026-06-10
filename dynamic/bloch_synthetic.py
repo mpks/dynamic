@@ -88,6 +88,7 @@ def main():
         noise_seed=args.noise_seed,
         output_path=args.output_path,
         rocking_hkl=rocking_hkl,
+        rocking_hkl_file=args.rocking_hkl_file,
         show=args.show,
     )
 
@@ -835,6 +836,7 @@ def simulate_image(
     noise_seed=0,
     output_path=None,
     rocking_hkl=None,
+    rocking_hkl_file=None,
     show=False,
 ):
     """
@@ -912,6 +914,16 @@ def simulate_image(
     wavelength_A = electron_wavelength_A(voltage_kV)
     pixel_size_mm = pixel_size_um * 1e-3
 
+    if rocking_hkl_file is not None:
+        file_hkl = _read_hkl_file(rocking_hkl_file)
+        print(
+            f"Loaded {len(file_hkl)} Miller indices "
+            f"from {rocking_hkl_file}"
+        )
+        if rocking_hkl is None:
+            rocking_hkl = file_hkl
+        else:
+            rocking_hkl = list(rocking_hkl) + file_hkl
     if rocking_hkl is None:
         rocking_hkl = []
 
@@ -1127,12 +1139,21 @@ def simulate_image(
         rc_name = f"rocking_{out_tag}.npz"
         if output_path is not None:
             rc_name = os.path.join(output_path, rc_name)
-        rc_save = {"angles": angles}
+        hkl_list = list(rocking_curves.keys())
+        hkl_arr = np.array(hkl_list, dtype=np.int32)
+        rc_save = {
+            "angles": angles,
+            "hkl_indices": hkl_arr,
+            "image_index": image_index,
+        }
         for hkl, curve in rocking_curves.items():
             key = f"hkl_{hkl[0]}_{hkl[1]}_{hkl[2]}"
             rc_save[key] = np.array(curve)
         np.savez(rc_name, **rc_save)
-        print(f"Rocking curves saved: {rc_name}")
+        print(
+            f"Rocking curves saved: {rc_name} "
+            f"({len(hkl_list)} reflections)"
+        )
 
     return True
 
@@ -1140,6 +1161,31 @@ def simulate_image(
 # ---------------------------------------------------------------------------
 # CLI helpers
 # ---------------------------------------------------------------------------
+
+def _read_hkl_file(path):
+    """
+    Read Miller indices from a text file, one per line.
+    Blank lines and lines starting with # are ignored.
+    Accepted formats:
+        h k l   (space-separated)
+        h,k,l   (comma-separated)
+    Returns a list of (h, k, l) tuples.
+    """
+    result = []
+    with open(path) as fh:
+        for line in fh:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            line = line.replace(",", " ")
+            parts = line.split()
+            if len(parts) != 3:
+                raise ValueError(
+                    f"Cannot parse HKL line: {line!r}"
+                )
+            result.append(tuple(int(x) for x in parts))
+    return result
+
 
 def _parse_hkl_list(hkl_strings):
     """Parse 'h,k,l' strings into (h, k, l) tuples."""
@@ -1217,6 +1263,16 @@ def _parse_args():
         help=(
             "Miller indices for rocking curves,"
             " e.g. 0,0,2 1,0,1"
+        ),
+    )
+    p.add_argument(
+        "--rocking_hkl_file",
+        type=str, default=None,
+        metavar="FILE",
+        help=(
+            "Text file with one Miller index per line "
+            "(h k l or h,k,l). "
+            "Combined with --rocking_hkl if both given."
         ),
     )
     p.add_argument("--show", action="store_true",
