@@ -71,6 +71,7 @@ def main():
         n_workers=args.n_workers,
         orientation_seed=args.orientation_seed,
         thickness_seed=args.thickness_seed,
+        thickness_nm=args.thickness_nm,
         k_max=args.k_max,
         sg_max=args.sg_max,
         num_phonon_configs=args.num_phonon_configs,
@@ -655,6 +656,155 @@ def print_intensity_stats(intensities, scale, readout_noise):
 
 
 # ---------------------------------------------------------------------------
+# Detector plotting helpers
+# ---------------------------------------------------------------------------
+
+def _project_spots_to_pixels(
+    positions, wavelength_A, distance_mm,
+    pixel_size_mm, beam_centre_px, npx, npy,
+):
+    """Project reciprocal-space positions to detector pixels."""
+    k0 = 1.0 / wavelength_A
+    cx, cy = beam_centre_px
+    px_coords = []
+    for pos in positions:
+        kx, ky, kz_lattice = pos[0], pos[1], pos[2]
+        kz_beam = k0 + kz_lattice
+        if kz_beam <= 0:
+            px_coords.append(None)
+            continue
+        dx = (kx / kz_beam) * distance_mm
+        dy = -(ky / kz_beam) * distance_mm
+        px_x = cx + dx / pixel_size_mm
+        px_y = cy + dy / pixel_size_mm
+        px_coords.append((px_x, px_y))
+    return px_coords
+
+
+def plot_detector_image(
+    image, positions, miller_indices, intensities,
+    npx, npy, wavelength_A, distance_mm,
+    pixel_size_mm, beam_centre_px, out_path,
+    top_spots=20,
+):
+    """
+    Save a raster PNG of the detector image matching the
+    dials.image_viewer look (binary cmap, log scale) with
+    red Miller index labels for the top_spots brightest spots.
+    """
+    px_coords = _project_spots_to_pixels(
+        positions, wavelength_A, distance_mm,
+        pixel_size_mm, beam_centre_px, npx, npy,
+    )
+    i_sorted = np.argsort(intensities)[::-1]
+    top_idx = set(i_sorted[:top_spots].tolist())
+
+    dpi = 100
+    fig, ax = plt.subplots(
+        figsize=(npx / dpi, npy / dpi), dpi=dpi
+    )
+    fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
+    display = np.log1p(image.astype(np.float32))
+    ax.imshow(
+        display,
+        cmap='binary',
+        origin='upper',
+        extent=[0, npx, npy, 0],
+        interpolation='nearest',
+        aspect='equal',
+    )
+    for i, (pos, miller, ints) in enumerate(
+        zip(px_coords, miller_indices, intensities)
+    ):
+        if pos is None:
+            continue
+        px_x, px_y = pos
+        if not (0 <= px_x < npx and 0 <= px_y < npy):
+            continue
+        if i in top_idx:
+            h, k, l = int(miller[0]), int(miller[1]), int(miller[2])
+            ax.plot(px_x, px_y, 'o',
+                    color='red', markersize=4,
+                    markerfacecolor='none',
+                    markeredgewidth=1)
+            ax.text(
+                px_x + 3, px_y - 3, f"{h},{k},{l}",
+                color='red', fontsize=4,
+                va='bottom', ha='left',
+            )
+        else:
+            ax.plot(px_x, px_y, '.', color='red',
+                    markersize=1, alpha=0.5)
+    ax.set_xlim(0, npx)
+    ax.set_ylim(npy, 0)
+    ax.axis('off')
+    plt.savefig(
+        out_path, dpi=dpi * 2,
+        bbox_inches='tight', pad_inches=0,
+        facecolor='white',
+    )
+    plt.close(fig)
+    print(f"Detector image saved: {out_path}")
+
+
+def plot_detector_labels(
+    positions, miller_indices, intensities,
+    npx, npy, wavelength_A, distance_mm,
+    pixel_size_mm, beam_centre_px, out_path,
+    top_spots=80,
+):
+    """
+    Save a PNG showing all spot positions with Miller index
+    labels on a dark background — for comparing abTEM vs
+    DIALS indexing.
+    """
+    px_coords = _project_spots_to_pixels(
+        positions, wavelength_A, distance_mm,
+        pixel_size_mm, beam_centre_px, npx, npy,
+    )
+    i_sorted = np.argsort(intensities)[::-1]
+    top_idx = set(i_sorted[:top_spots].tolist())
+
+    fig, ax = plt.subplots(figsize=(10, 10))
+    ax.set_xlim(0, npx)
+    ax.set_ylim(npy, 0)
+    ax.set_facecolor("#1a1a1a")
+    fig.patch.set_facecolor("#1a1a1a")
+    ax.tick_params(colors='white')
+    ax.xaxis.label.set_color('white')
+    ax.yaxis.label.set_color('white')
+    ax.set_xlabel("x (pixels)")
+    ax.set_ylabel("y (pixels)")
+
+    for i, (pos, miller, ints) in enumerate(
+        zip(px_coords, miller_indices, intensities)
+    ):
+        if pos is None:
+            continue
+        px_x, px_y = pos
+        if not (0 <= px_x < npx and 0 <= px_y < npy):
+            continue
+        if i in top_idx:
+            h, k, l = int(miller[0]), int(miller[1]), int(miller[2])
+            size = 3 + 6 * (ints / intensities.max())
+            ax.plot(px_x, px_y, 'o',
+                    color='red', markersize=size)
+            ax.text(
+                px_x + 4, px_y - 4, f"{h},{k},{l}",
+                color='yellow', fontsize=5,
+                va='bottom', ha='left',
+            )
+        else:
+            ax.plot(px_x, px_y, '.', color='#666666',
+                    markersize=1)
+    plt.tight_layout()
+    plt.savefig(out_path, dpi=200,
+                facecolor=fig.get_facecolor())
+    plt.close(fig)
+    print(f"Detector labels saved: {out_path}")
+
+
+# ---------------------------------------------------------------------------
 # Main simulation function
 # ---------------------------------------------------------------------------
 
@@ -668,9 +818,10 @@ def simulate_image(
     n_workers=1,
     orientation_seed=42,
     thickness_seed=0,
+    thickness_nm=None,
     k_max=5.0,
     sg_max=0.1,
-    num_phonon_configs=10,
+    num_phonon_configs=1,
     phonon_sigmas=0.0,
     phonon_seed=42,
     voltage_kV=200.0,
@@ -721,9 +872,19 @@ def simulate_image(
     # ------------------------------------------------------------------
     # 1. Geometry
     # ------------------------------------------------------------------
-    initial_R, thickness_nm = build_crystal_geometry(
+    initial_R, thickness_nm_seed = build_crystal_geometry(
         orientation_seed, thickness_seed
     )
+    # If thickness_nm is explicitly provided, use it and ignore
+    # the thickness seed. If not, use the seeded random value.
+    if thickness_nm is None:
+        thickness_nm = thickness_nm_seed
+    else:
+        print(
+            f"[Synthetic] Using explicit thickness: "
+            f"{thickness_nm:.1f} nm "
+            f"(thickness_seed ignored)"
+        )
 
     n_images = int(round((end_angle - start_angle) / delta))
     if image_index < 0 or image_index >= n_images:
@@ -893,6 +1054,41 @@ def simulate_image(
     print(f"CBF written: {cbf_name}")
 
     # ------------------------------------------------------------------
+    # 7b. Detector image and label plots
+    # ------------------------------------------------------------------
+    beam_centre_px = (npx / 2.0, npy / 2.0)
+    raster_name = f"detector_image_{out_tag}.png"
+    label_name = f"detector_labels_{out_tag}.png"
+    if output_path is not None:
+        raster_name = os.path.join(output_path, raster_name)
+        label_name = os.path.join(output_path, label_name)
+    plot_detector_image(
+        image=noisy,
+        positions=last_positions,
+        miller_indices=last_millers,
+        intensities=last_mean_ints,
+        npx=npx,
+        npy=npy,
+        wavelength_A=wavelength_A,
+        distance_mm=distance_mm,
+        pixel_size_mm=pixel_size_mm,
+        beam_centre_px=beam_centre_px,
+        out_path=raster_name,
+    )
+    plot_detector_labels(
+        positions=last_positions,
+        miller_indices=last_millers,
+        intensities=last_mean_ints,
+        npx=npx,
+        npy=npy,
+        wavelength_A=wavelength_A,
+        distance_mm=distance_mm,
+        pixel_size_mm=pixel_size_mm,
+        beam_centre_px=beam_centre_px,
+        out_path=label_name,
+    )
+
+    # ------------------------------------------------------------------
     # 8. Save geometry NPZ
     # ------------------------------------------------------------------
     scan_R_centre = rotation_about_y(window_centre)
@@ -981,6 +1177,13 @@ def _parse_args():
                    help="Seed for random starting orientation")
     p.add_argument("--thickness_seed", type=int, default=0,
                    help="Seed for crystal thickness draw")
+    p.add_argument(
+        "--thickness_nm", type=float, default=None,
+        help=(
+            "Crystal thickness in nm. "
+            "If given, overrides thickness_seed."
+        ),
+    )
     p.add_argument("--k_max", type=float, default=5.0,
                    help="Max scattering vector (1/Å)")
     p.add_argument("--sg_max", type=float, default=0.1,
