@@ -8,6 +8,7 @@ setup(
     entry_points={
          'console_scripts': [
              'dynamic-extract-dials = dynamic.extract_dials_experiment:main',
+             'myedly = dynamic.simulation.cli:main',
         ]
     },
     packages=find_packages(),
