@@ -6,7 +6,8 @@ setup(
     version='0.0.1',
     license="BSD-3-Clause",
     entry_points={
-        'console_scripts': [
+         'console_scripts': [
+             'dynamic-extract-dials = dynamic.extract_dials_experiment:main',
         ]
     },
     packages=find_packages(),
