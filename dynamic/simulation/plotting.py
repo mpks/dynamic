@@ -27,7 +27,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 
-from dynamic.simulation.export_cbf import rasterise_image
+from dynamic.simulation.export_cbf import render_image
 
 
 def _rank_thresholds(n, red_frac=0.10, grey_frac=0.30):
@@ -141,15 +141,17 @@ def plot_image(image_result, detector, out_path,
     return out_path
 
 
-def plot_filename(out_dir, tag, image_index):
-    """Per-image labels-plot path, 4-digit zero-padded index."""
-    name = f"plot_{tag}_{image_index:04d}.png"
+def plot_filename(out_dir, method, tag, image_index):
+    """Per-image labels-plot path, with method and 4-digit
+    zero-padded index."""
+    name = f"plot_{method}_{tag}_{image_index:04d}.png"
     return os.path.join(out_dir, name)
 
 
-def raster_filename(out_dir, tag, image_index):
-    """Per-image raster-plot path, 4-digit zero-padded index."""
-    name = f"raster_{tag}_{image_index:04d}.png"
+def raster_filename(out_dir, method, tag, image_index):
+    """Per-image raster-plot path, with method and 4-digit
+    zero-padded index."""
+    name = f"raster_{method}_{tag}_{image_index:04d}.png"
     return os.path.join(out_dir, name)
 
 
@@ -174,7 +176,10 @@ def plot_detector_raster(image_result, detector, params,
     npx = detector.npx
     npy = detector.npy
 
-    image = rasterise_image(image_result, detector, params)
+    image = render_image(
+        image_result.signal, detector.beam_centre_px,
+        params, image_result.image_index,
+    )
     display = np.log1p(image.astype(np.float64))
 
     fig, ax = plt.subplots(figsize=(10, 10))
@@ -247,7 +252,7 @@ def plot_images(images, detector, out_dir, tag,
     os.makedirs(out_dir, exist_ok=True)
     paths = []
     for image in images:
-        path = plot_filename(out_dir, tag,
+        path = plot_filename(out_dir, image.method, tag,
                              image.image_index)
         plot_image(image, detector, path,
                    red_frac=red_frac,
@@ -262,7 +267,7 @@ def plot_images_raster(images, detector, params, out_dir,
     os.makedirs(out_dir, exist_ok=True)
     paths = []
     for image in images:
-        path = raster_filename(out_dir, tag,
+        path = raster_filename(out_dir, image.method, tag,
                               image.image_index)
         plot_detector_raster(image, detector, params, path,
                              red_frac=red_frac,

@@ -1,20 +1,23 @@
 """
 export_npz.py — default exporter writing the engine outputs to
-NumPy NPZ files, with no noise and no point-spread broadening.
+NumPy NPZ files.
 
 Two kinds of file are written:
 
-  * one NPZ per image, holding that image's integrated spots
-    (Miller indices, detector centroids px/py, intensities)
-    together with the image index and centre angle;
+  * one NPZ per image, holding the integrated signal and noise
+    images, the spot list (Miller indices and detector
+    centroids, used for labels), and all the geometry needed to
+    reconstruct a CBF later without re-running the simulation;
 
   * one NPZ for the whole scan, holding the rocking curves
-    (the substep angle axis and the intensity of each tracked
-    reflection at every substep).
+    (the substep angle axis and the raw intensity of each
+    tracked reflection at every substep).
 
-The per-image files follow the convention used by the plotting
-tools, which read several of them and concatenate by image
-index.
+The integration method ("vector" or "raster") is recorded both
+in the per-image filename and inside the file, so a downstream
+tool knows how the signal and noise were built.
+
+Per-image files are compressed (the images are mostly zeros).
 """
 
 from __future__ import annotations
@@ -31,55 +34,59 @@ def _hkl_array(millers):
     return np.array(millers, dtype=np.int32)
 
 
-def image_filename(out_dir, tag, image_index):
+def image_filename(out_dir, method, tag, image_index):
     """
-    Build the per-image NPZ path.
-
-    tag is an arbitrary run label; image_index is zero padded
-    to four digits to sort correctly across a scan (scans are
-    typically fewer than 1000 images).
+    Per-image NPZ path, including the integration method and a
+    4-digit zero-padded index, e.g.
+    image_vector_kmax02_0007.npz.
     """
-    name = f"image_{tag}_{image_index:04d}.npz"
+    name = f"image_{method}_{tag}_{image_index:04d}.npz"
     return os.path.join(out_dir, name)
 
 
-def save_image(image, out_dir, tag):
+def save_image(image, detector, beam, scan, out_dir, tag):
     """
-    Save one ImageResult to an NPZ file.
+    Save one ImageResult to a compressed NPZ file.
 
-    Stored arrays:
-      hkl_indices : (N, 3) int
-      px, py      : (N,) float   detector centroids
-      intensities : (N,) float   integrated intensities
-      image_index : int
-      angle_centre_deg : float
+    Stored arrays/values:
+      method        : "vector" or "raster"
+      signal        : (npy, npx) float   integrated sharp signal
+      hkl_indices   : (N, 3) int         spot list (labels)
+      px, py        : (N,) float         spot centroids
+      intensities   : (N,) float         integrated intensities
+      image_index   : int
+      angle_centre_deg, delta_deg : float
+      npx, npy, pixel_size_mm, distance_mm : detector geometry
+      beam_centre_px : (2,) float
+      wavelength_A   : float
+
+    The noise halo is not stored; it is generated from the
+    signal at render time, so its width (psf_sigma) and level
+    (spot_percent) can be changed without re-simulating.
     """
     os.makedirs(out_dir, exist_ok=True)
-    path = image_filename(out_dir, tag, image.image_index)
-    np.savez(
+    path = image_filename(
+        out_dir, image.method, tag, image.image_index
+    )
+    np.savez_compressed(
         path,
+        method=image.method,
+        signal=image.signal,
         hkl_indices=_hkl_array(image.millers),
         px=image.px,
         py=image.py,
         intensities=image.intensities,
         image_index=image.image_index,
         angle_centre_deg=image.angle_centre_deg,
+        delta_deg=scan.delta_deg,
+        npx=detector.npx,
+        npy=detector.npy,
+        pixel_size_mm=detector.pixel_size_mm,
+        distance_mm=detector.distance_mm,
+        beam_centre_px=np.array(detector.beam_centre_px),
+        wavelength_A=beam.wavelength_A,
     )
     return path
-
-
-def save_images(images, out_dir, tag):
-    """Save every ImageResult; return the list of paths."""
-    paths = []
-    for image in images:
-        path = save_image(image, out_dir, tag)
-        paths.append(path)
-        print(
-            f"  wrote {os.path.basename(path)} "
-            f"({len(image.millers)} spots)",
-            flush=True,
-        )
-    return paths
 
 
 def rocking_filename(out_dir, tag):
@@ -89,14 +96,18 @@ def rocking_filename(out_dir, tag):
 
 def save_rocking(rocking, out_dir, tag):
     """
-    Save the RockingResult to a single NPZ for the whole scan.
+    Save the scan-wide rocking curves to a single NPZ.
 
     Stored arrays:
-      angles_deg : (M,) float   substep angle axis
-      hkl_indices : (K, 3) int  tracked reflections
-      curves : (K, M) float     intensity per reflection per
-                                substep, row-aligned to
-                                hkl_indices
+      angles_deg  : (M,) float   substep angle axis
+      hkl_indices : (K, 3) int   tracked reflections
+      curves      : (K, M) float raw intensity per reflection
+                                 per substep, row-aligned to
+                                 hkl_indices
+
+    The intensities are raw (unweighted); integrating a curve
+    means multiplying by the angular step, which the angle axis
+    provides.
     """
     os.makedirs(out_dir, exist_ok=True)
     path = rocking_filename(out_dir, tag)
@@ -112,7 +123,7 @@ def save_rocking(rocking, out_dir, tag):
             [rocking.curves[hkl] for hkl in hkls]
         )
 
-    np.savez(
+    np.savez_compressed(
         path,
         angles_deg=rocking.angles_deg,
         hkl_indices=hkl_arr,

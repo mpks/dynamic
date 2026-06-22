@@ -157,7 +157,8 @@ def _write_image_outputs(image_result, detector, beam, scan,
                          cbf_params, out_dir, tag,
                          write_cbf, write_plots):
     """Write NPZ, optionally CBF and plots, for one image."""
-    save_image(image_result, out_dir, tag)
+    save_image(image_result, detector, beam, scan,
+               out_dir, tag)
 
     if write_cbf:
         save_image_cbf(image_result, detector, beam, scan,
@@ -165,13 +166,14 @@ def _write_image_outputs(image_result, detector, beam, scan,
 
     if write_plots:
         idx = image_result.image_index
+        method = image_result.method
         plot_image(
             image_result, detector,
-            plot_filename(out_dir, tag, idx),
+            plot_filename(out_dir, method, tag, idx),
         )
         plot_detector_raster(
             image_result, detector, cbf_params,
-            raster_filename(out_dir, tag, idx),
+            raster_filename(out_dir, method, tag, idx),
         )
 
 
@@ -180,14 +182,17 @@ def _write_image_outputs(image_result, detector, beam, scan,
 # ----------------------------------------------------------------
 
 def run(cif_file, detector, beam, geometry, scan, simulator,
-        engine_params, cbf_params, out_dir, tag,
-        image_selection=None, write_cbf=True,
+        engine_params, integration_params, cbf_params,
+        out_dir, tag, image_selection=None, write_cbf=True,
         write_plots=True):
     """
     Run the scan over the selected images.
 
     Parameters
     ----------
+    integration_params : IntegrationParams
+        Passed through to the engine to select the integrator
+        (vector or raster) and its psf_sigma / spot_percent.
     image_selection : str or None
         Selection string (see parse_image_selection); None or
         empty means all images.
@@ -219,6 +224,7 @@ def run(cif_file, detector, beam, geometry, scan, simulator,
 
     image_results = []
     for n, image_index in enumerate(selected):
+
         centre = (
             scan.angles_deg[image_index]
             + 0.5 * scan.delta_deg
@@ -232,6 +238,7 @@ def run(cif_file, detector, beam, geometry, scan, simulator,
         image_result, image_rocking = run_image(
             cif_file, detector, beam, geometry, scan,
             image_index, simulator, engine_params,
+            integration_params,
         )
         image_results.append(image_result)
 

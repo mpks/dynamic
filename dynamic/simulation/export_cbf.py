@@ -1,22 +1,27 @@
 """
-export_cbf.py — render integrated diffraction images to miniCBF
-files readable by DIALS.
+export_cbf.py — render integrated images to miniCBF files.
 
-Unlike the NPZ exporter, this module rasterises the integrated
-spots onto the detector grid: each spot is placed at its
-intensity-weighted centroid, the image is scaled, broadened by a
-Gaussian point-spread function, and given Poisson + readout
-noise.  The scale, PSF width and noise parameters live here in
-CbfParams because they are specific to producing a detector
-image.
+An image is reconstructed from the integrated signal and noise
+images (produced by either integrator) plus three render-time
+noise contributions:
 
-The header is populated from the Detector, Beam and Scan domain
-objects.  Using the PILATUS_1.2 convention together with the
-"Eiger Quadro" detector name routes dxtbx to
-FormatCBFMiniEigerQuadroED1, which sets up an electron probe and
-the simple pixel-to-millimetre strategy.  That reader requires
-round(wavelength, 3) == 0.029 (about 160 kV); at other
-wavelengths dxtbx falls back to the generic Eiger format.
+  * signal     : the integrated signal, scaled so its strongest
+                 pixel is CbfParams.scale counts;
+  * spot noise : the stored noise image (a faint, PSF-broadened
+                 halo proportional to the spots), added as is;
+  * background : a random Poisson field over the whole image,
+                 generated from bg_seed combined with the image
+                 index, at level bg_intensity;
+  * beam       : a deterministic Gaussian blob at the direct
+                 beam, generated from beam_seed combined with
+                 the image index, of width beam_sigma and peak
+                 beam_intensity.
+
+Only signal and spot noise come from the simulation (stored in
+the NPZ); background and beam are regenerated here, so they can
+be changed by re-rendering without re-running the simulation.
+
+The header is filled from the detector and beam geometry.
 """
 
 from __future__ import annotations
@@ -30,123 +35,163 @@ from scipy.ndimage import gaussian_filter
 
 
 # ----------------------------------------------------------------
-# CBF rendering parameters
+# CBF render parameters (three-level noise)
 # ----------------------------------------------------------------
 
 @dataclass(frozen=True)
 class CbfParams:
     """
-    Parameters for rendering an image to CBF.
+    Render-time parameters.
 
     scale : float
-        Counts assigned to the strongest pixel after summing.
+        Multiplicative factor applied to the integrated signal
+        (preserves the true relative spot intensities).
     psf_sigma : float
-        Gaussian point-spread sigma in pixels.
-    readout_noise : float
-        Standard deviation of additive Gaussian readout noise.
-    noise_seed : int
-        Seed for the Poisson + readout noise generator.
-    ds_sigma : float
-        Sigma (pixels) of the diffuse-scatter Gaussian blob
-        centred on the direct beam (0, 0, 0).  Zero disables
-        the blob.
-    ds_intensity : float
-        Peak counts of the diffuse-scatter blob, in the same
-        units as scale (added after scaling, before noise).
+        Gaussian sigma (pixels) of the point-spread blur used to
+        build the spot-noise halo from the signal.
+    spot_percent : float
+        Spot-level noise as a fraction of the (blurred) signal
+        (e.g. 0.001 for 0.1 %).
+    bg_intensity : float
+        Mean of the Poisson background field.
+    bg_seed : int
+        Master seed for the background; combined with the image
+        index so each image gets a distinct, reproducible field.
+    beam_sigma : float
+        Sigma (pixels) of the direct-beam Gaussian blob.
+    beam_intensity : float
+        Peak counts of the direct-beam blob (0 disables it).
+    beam_seed : int
+        Master seed for the direct-beam blob; combined with the
+        image index.
     """
     scale: float = 10000.0
     psf_sigma: float = 1.0
-    readout_noise: float = 1.0
-    noise_seed: int = 0
-    ds_sigma: float = 30.0
-    ds_intensity: float = 0.0
+    spot_percent: float = 0.001
+    bg_intensity: float = 1.0
+    bg_seed: int = 0
+    beam_sigma: float = 30.0
+    beam_intensity: float = 0.0
+    beam_seed: int = 0
 
 
 # ----------------------------------------------------------------
-# Rasterisation
+# Per-image RNG (seed-seeds-the-seed)
 # ----------------------------------------------------------------
 
-def _add_diffuse_scatter(image, detector, params):
+def _image_rng(master_seed, image_index):
     """
-    Add a Gaussian diffuse-scatter blob centred on the direct
-    beam (the detector beam centre).  The blob has peak
-    params.ds_intensity counts and width params.ds_sigma
-    pixels.  Returns the image unchanged if ds_intensity <= 0.
+    A reproducible per-image generator: the master seed and the
+    image index together seed the generator, so one master seed
+    fixes the whole scan image by image.
     """
-    if params.ds_intensity <= 0 or params.ds_sigma <= 0:
-        return image
-    npy, npx = image.shape
-    cx, cy = detector.beam_centre_px
+    seq = np.random.SeedSequence([master_seed, image_index])
+    return np.random.default_rng(seq)
+
+
+# ----------------------------------------------------------------
+# Noise contributions
+# ----------------------------------------------------------------
+
+def _scaled_signal(signal, scale):
+    """Apply the scale factor to the signal (preserving the
+    true relative intensities of the spots)."""
+    return signal * scale
+
+
+def _background(shape, params, image_index):
+    """Random Poisson background field for this image."""
+    if params.bg_intensity <= 0:
+        return np.zeros(shape)
+    rng = _image_rng(params.bg_seed, image_index)
+    return rng.poisson(
+        params.bg_intensity, size=shape
+    ).astype(np.float64)
+
+
+def _beam_blob(shape, beam_centre_px, params, image_index):
+    """
+    Diffuse-scatter blob at the direct beam: a smooth Gaussian
+    envelope with Poisson shot noise on top, so it is not a
+    clean Gaussian.  The per-image RNG (from beam_seed and the
+    image index) makes the noise reproducible.
+    """
+    if params.beam_intensity <= 0 or params.beam_sigma <= 0:
+        return np.zeros(shape)
+    npy, npx = shape
+    cx, cy = beam_centre_px
     yy, xx = np.mgrid[0:npy, 0:npx]
     r2 = (xx - cx) ** 2 + (yy - cy) ** 2
-    blob = params.ds_intensity * np.exp(
-        -r2 / (2.0 * params.ds_sigma ** 2)
+    envelope = params.beam_intensity * np.exp(
+        -r2 / (2.0 * params.beam_sigma ** 2)
     )
-    return image + blob
+    # Poisson shot noise using the envelope as the local mean,
+    # so the noise grows with the blob's local brightness and
+    # vanishes far from the beam.
+    rng = _image_rng(params.beam_seed, image_index)
+    return rng.poisson(envelope).astype(np.float64)
 
 
-def rasterise_image(image_result, detector, params):
+def _spot_noise(scaled_signal, params):
     """
-    Build a noisy integer detector image from an ImageResult.
+    Spot-level noise halo: the scaled signal blurred by the
+    point-spread function and scaled by spot_percent.  This is
+    the deterministic faint halo around every spot, produced at
+    render time (not stored)."""
+    if params.spot_percent <= 0 or params.psf_sigma <= 0:
+        return np.zeros_like(scaled_signal)
+    blurred = gaussian_filter(scaled_signal, params.psf_sigma)
+    return blurred * params.spot_percent
 
-    The spots are placed at their (already integrated) centroids
-    px, py with their integrated intensities, broadened by the
-    PSF, scaled so the strongest pixel is params.scale counts.
-    A diffuse-scatter Gaussian blob is then added at the direct
-    beam, and finally Poisson and readout noise are applied.
+
+# ----------------------------------------------------------------
+# Render
+# ----------------------------------------------------------------
+
+def render_image(signal, beam_centre_px, params, image_index):
+    """
+    Build the final integer detector image from the sharp
+    signal.
+
+    Layers added to the scaled signal:
+      * spot noise : the scaled signal blurred (psf_sigma) and
+                     scaled by spot_percent;
+      * background : a random Poisson field (bg_seed + index);
+      * beam       : the direct-beam blob with shot noise
+                     (beam_seed + index).
 
     Returns
     -------
     ndarray (npy, npx), int32
     """
-    npx = detector.npx
-    npy = detector.npy
-    raw = np.zeros((npy, npx), dtype=np.float64)
-
-    px = image_result.px
-    py = image_result.py
-    intensities = image_result.intensities
-
-    for i in range(len(intensities)):
-        ix = int(round(px[i]))
-        iy = int(round(py[i]))
-        if 0 <= ix < npx and 0 <= iy < npy:
-            raw[iy, ix] += intensities[i]
-
-    if params.psf_sigma > 0:
-        raw = gaussian_filter(raw, sigma=params.psf_sigma)
-
-    raw_max = raw.max()
-    if raw_max > 0:
-        raw = raw / raw_max * params.scale
-
-    # Diffuse scatter around the direct beam, added after the
-    # spot scaling so its level is set independently.
-    raw = _add_diffuse_scatter(raw, detector, params)
-
-    rng = np.random.default_rng(params.noise_seed)
-    clipped = np.maximum(raw, 0)
-    noisy = rng.poisson(clipped).astype(np.float64)
-    noisy += rng.normal(0, params.readout_noise, noisy.shape)
-    noisy = np.clip(np.round(noisy), 0, None)
-    return noisy.astype(np.int32)
+    shape = signal.shape
+    scaled = _scaled_signal(signal, params.scale)
+    img = scaled
+    img = img + _spot_noise(scaled, params)
+    img = img + _background(shape, params, image_index)
+    img = img + _beam_blob(
+        shape, beam_centre_px, params, image_index
+    )
+    img = np.clip(np.round(img), 0, None)
+    return img.astype(np.int32)
 
 
 # ----------------------------------------------------------------
 # Header
 # ----------------------------------------------------------------
 
-def build_header(detector, beam, start_angle_deg,
+def build_header(distance_mm, pixel_size_mm, beam_centre_px,
+                 wavelength_A, start_angle_deg,
                  angle_increment_deg):
     """
-    Build the _array_data.header_contents string from the
-    Detector and Beam objects, in the ELDICO ED-1 /
-    Eiger Quadro miniCBF format.
+    Build the _array_data.header_contents string in the
+    ELDICO ED-1 / Eiger Quadro miniCBF format from plain
+    geometry values (so it works from a loaded NPZ too).
     """
-    px_m = detector.pixel_size_mm * 1e-3
-    d_m = detector.distance_mm * 1e-3
-    cx, cy = detector.beam_centre_px
-    wl = beam.wavelength_A
+    px_m = pixel_size_mm * 1e-3
+    d_m = distance_mm * 1e-3
+    cx, cy = beam_centre_px
+    wl = wavelength_A
     ts = datetime.datetime.utcnow().strftime(
         "%Y-%m-%dT%H:%M:%S.000"
     )
@@ -191,64 +236,51 @@ def build_header(detector, beam, start_angle_deg,
 
 def write_cbf(image_int32, header_contents, output_path):
     """
-    Write a miniCBF using the PILATUS_1.2 convention so that
-    dxtbx selects the electron-probe Eiger format.
+    Write a miniCBF using the PILATUS_1.2 convention so dxtbx
+    selects the electron-probe Eiger format.
     """
     import fabio.cbfimage
     fabio_header = {
-        "_audit.creation_method": (
-            "Created by dynamic.simulation export_cbf"
-        ),
-        "_audit_author.name": "Bloch wave simulation",
         "_array_data.header_convention": "PILATUS_1.2",
         "_array_data.header_contents": header_contents,
-        "_array_data.description": "",
     }
     cbf = fabio.cbfimage.CbfImage(
-        data=image_int32,
-        header=fabio_header,
+        data=image_int32, header=fabio_header
     )
     cbf.write(output_path)
 
 
-def cbf_filename(out_dir, tag, image_index):
-    """Per-image CBF path with 4-digit zero-padded index."""
-    name = f"image_{tag}_{image_index:04d}.cbf"
+def cbf_filename(out_dir, method, tag, image_index):
+    """Per-image CBF path including the integration method."""
+    name = f"image_{method}_{tag}_{image_index:04d}.cbf"
     return os.path.join(out_dir, name)
 
 
 def save_image_cbf(image_result, detector, beam, scan,
                    params, out_dir, tag):
     """
-    Render one ImageResult to a CBF file.
+    Render one ImageResult to a CBF during a simulation run.
 
-    The image window starts at centre - delta/2 and has width
-    delta (taken from the Scan), matching the integration
-    window used by the engine.
+    Uses the in-memory ImageResult signal/noise and the
+    detector/beam/scan objects for the header.
     """
     os.makedirs(out_dir, exist_ok=True)
 
     delta = scan.delta_deg
     start_angle = image_result.angle_centre_deg - delta / 2.0
 
-    img = rasterise_image(image_result, detector, params)
-    header = build_header(detector, beam, start_angle, delta)
-
-    path = cbf_filename(out_dir, tag, image_result.image_index)
+    img = render_image(
+        image_result.signal, detector.beam_centre_px,
+        params, image_result.image_index,
+    )
+    header = build_header(
+        detector.distance_mm, detector.pixel_size_mm,
+        detector.beam_centre_px, beam.wavelength_A,
+        start_angle, delta,
+    )
+    path = cbf_filename(
+        out_dir, image_result.method, tag,
+        image_result.image_index,
+    )
     write_cbf(img, header, path)
     return path
-
-
-def save_images_cbf(images, detector, beam, scan,
-                    params, out_dir, tag):
-    """Render every ImageResult to CBF; return the paths."""
-    paths = []
-    for image in images:
-        path = save_image_cbf(image, detector, beam, scan,
-                              params, out_dir, tag)
-        paths.append(path)
-        print(
-            f"  wrote {os.path.basename(path)}",
-            flush=True,
-        )
-    return paths

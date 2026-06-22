@@ -29,6 +29,7 @@ from dynamic.simulation.simulator import (
     BlochSimulator,
 )
 from dynamic.simulation.engine import EngineParams
+from dynamic.simulation.integration import IntegrationParams
 from dynamic.simulation.miller import read_miller_indices
 from dynamic.simulation.export_cbf import CbfParams
 from dynamic.simulation.driver import run as driver_run
@@ -53,12 +54,17 @@ DEFAULTS = {
     "n_substeps": 10,
     "intensity_cut": 0.0,
     "n_workers": 1,
-    "scale": 10000.0,
+    # integration (simulation-time)
+    "integration": "vector",
     "psf_sigma": 1.0,
-    "readout_noise": 1.0,
-    "noise_seed": 0,
-    "ds_sigma": 30.0,
-    "ds_intensity": 0.0,
+    "spot_percent": 0.001,
+    # CBF render (changeable without re-simulating)
+    "scale": 10000.0,
+    "bg_intensity": 1.0,
+    "bg_seed": 0,
+    "beam_sigma": 30.0,
+    "beam_intensity": 0.0,
+    "beam_seed": 0,
     # synthetic scan
     "start_deg": -30.0,
     "delta_deg": 0.5,
@@ -135,29 +141,47 @@ def build_parser():
         ),
     )
     common.add_argument(
-        "--scale", type=float, default=d["scale"],
+        "--integration", choices=["vector", "raster"],
+        default=d["integration"],
+        help="Substep integration method",
     )
     common.add_argument(
         "--psf_sigma", type=float, default=d["psf_sigma"],
+        help="PSF sigma (pixels) for the spot-noise image",
     )
     common.add_argument(
-        "--readout_noise", type=float,
-        default=d["readout_noise"],
-    )
-    common.add_argument(
-        "--noise_seed", type=int, default=d["noise_seed"],
-    )
-    common.add_argument(
-        "--ds_sigma", type=float, default=d["ds_sigma"],
-        help="Diffuse-scatter blob sigma (pixels)",
-    )
-    common.add_argument(
-        "--ds_intensity", type=float,
-        default=d["ds_intensity"],
+        "--spot_percent", type=float,
+        default=d["spot_percent"],
         help=(
-            "Diffuse-scatter blob peak counts at the direct "
-            "beam (0 disables)"
+            "Spot-level noise as a fraction of spot intensity "
+            "(e.g. 0.001 = 0.1%%)"
         ),
+    )
+    common.add_argument(
+        "--scale", type=float, default=d["scale"],
+        help="Counts at the strongest signal pixel",
+    )
+    common.add_argument(
+        "--bg_intensity", type=float,
+        default=d["bg_intensity"],
+        help="Poisson background level (CBF render time)",
+    )
+    common.add_argument(
+        "--bg_seed", type=int, default=d["bg_seed"],
+        help="Master seed for the background field",
+    )
+    common.add_argument(
+        "--beam_sigma", type=float, default=d["beam_sigma"],
+        help="Direct-beam blob sigma (pixels)",
+    )
+    common.add_argument(
+        "--beam_intensity", type=float,
+        default=d["beam_intensity"],
+        help="Direct-beam blob peak counts (0 disables)",
+    )
+    common.add_argument(
+        "--beam_seed", type=int, default=d["beam_seed"],
+        help="Master seed for the direct-beam blob",
     )
     common.add_argument(
         "--images", default=None,
@@ -320,18 +344,25 @@ def main(argv=None):
         rocking_hkl=rocking_hkl,
     )
 
+    integration_params = IntegrationParams(
+        method=args.integration,
+    )
+
     cbf_params = CbfParams(
         scale=args.scale,
         psf_sigma=args.psf_sigma,
-        readout_noise=args.readout_noise,
-        noise_seed=args.noise_seed,
-        ds_sigma=args.ds_sigma,
-        ds_intensity=args.ds_intensity,
+        spot_percent=args.spot_percent,
+        bg_intensity=args.bg_intensity,
+        bg_seed=args.bg_seed,
+        beam_sigma=args.beam_sigma,
+        beam_intensity=args.beam_intensity,
+        beam_seed=args.beam_seed,
     )
 
     print(f"Running {args.mode} scan: "
           f"{scan.n_images} images total, "
-          f"{scan.n_substeps} substeps each")
+          f"{scan.n_substeps} substeps each "
+          f"({args.integration} integration)")
 
     driver_run(
         cif_file=args.cif_file,
@@ -341,6 +372,7 @@ def main(argv=None):
         scan=scan,
         simulator=simulator,
         engine_params=engine_params,
+        integration_params=integration_params,
         cbf_params=cbf_params,
         out_dir=args.out_dir,
         tag=args.tag,

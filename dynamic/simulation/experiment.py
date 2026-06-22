@@ -36,6 +36,9 @@ class Detector:
     slow_axis: np.ndarray = field(
         default_factory=lambda: np.array([0.0, 1.0, 0.0])
     )
+    origin: np.ndarray = field(
+        default_factory=lambda: np.array([0.0, 0.0, 0.0])
+    )
 
 
 @dataclass(frozen=True)
@@ -343,6 +346,7 @@ def _detector_from_dict(detector_d, beam_direction):
         beam_centre_px=(cx_px, cy_px),
         fast_axis=fast,
         slow_axis=slow,
+        origin=origin,
     )
 
 

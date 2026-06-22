@@ -31,6 +31,10 @@ from dynamic.simulation.experiment import (
     axis_angle_rotation_matrix,
 )
 from dynamic.simulation.projection import project_spots
+from dynamic.simulation.integration import (
+    make_integrator,
+    merge_states,
+)
 
 
 # ----------------------------------------------------------------
@@ -67,9 +71,15 @@ class ImageResult:
 
     millers : list of (h, k, l)
     px, py : ndarray
-        Intensity-weighted detector centroids (pixels).
+        Intensity-weighted detector centroids (pixels), used to
+        label the diagnostic image.
     intensities : ndarray
-        Integrated intensities (sum over substeps).
+        Integrated intensities (angular integral over substeps).
+    signal : ndarray (npy, npx)
+        Integrated sharp signal image (no blur).  The noise halo
+        is produced from this at render time.
+    method : str
+        Integration method used ("vector" or "raster").
     angle_centre_deg : float
         Centre angle of the image (start + delta/2).
     image_index : int
@@ -78,6 +88,8 @@ class ImageResult:
     px: np.ndarray
     py: np.ndarray
     intensities: np.ndarray
+    signal: np.ndarray
+    method: str
     angle_centre_deg: float
     image_index: int
 
@@ -139,22 +151,31 @@ def _process_substep_batch(args):
     """
     Process a batch of substep angles for a single image.
 
-    Runs in a worker process.  Returns partial accumulators:
-      sum_I, sum_I_px, sum_I_py : dict (h,k,l) -> float
-      rocking : dict (h,k,l) -> dict(angle -> intensity)
+    Runs in a worker process.  Builds a partial integrator
+    state (signal/noise arrays and per-hkl sums) and the partial
+    rocking-curve data for this batch.
 
     args is a tuple (picklable):
       (cif_file, geometry, simulator, detector, beam,
-       base_thickness_A, angle_batch, rocking_hkl_set)
+       base_thickness_A, angle_batch, rocking_hkl_set,
+       integrator, weight)
+
+    weight is the angular width delta_deg / n_substeps applied
+    to every substep so the integrated intensity is invariant
+    to the number of substeps.  The rocking curves store the
+    raw (unweighted) intensity.
+
+    Returns (state, rocking)
+      state   : IntegratorState
+      rocking : dict (h,k,l) -> dict(angle -> raw intensity)
     """
     (cif_file, geometry, simulator, detector, beam,
-     base_thickness_A, angle_batch, rocking_hkl_set) = args
+     base_thickness_A, angle_batch, rocking_hkl_set,
+     integrator, weight) = args
 
     base_atoms = make_base_atoms(cif_file, geometry)
 
-    sum_I = {}
-    sum_I_px = {}
-    sum_I_py = {}
+    state = integrator.new_state()
     rocking = {}
 
     for angle in angle_batch:
@@ -165,86 +186,63 @@ def _process_substep_batch(args):
         spots = simulator.simulate(atoms, thickness_A)
         projected = project_spots(spots, detector, beam)
 
-        for s in projected:
-            hkl = s["hkl"]
-            inten = s["intensity"]
-            px = s["px"]
-            py = s["py"]
-            sum_I[hkl] = sum_I.get(hkl, 0.0) + inten
-            sum_I_px[hkl] = (
-                sum_I_px.get(hkl, 0.0) + inten * px
-            )
-            sum_I_py[hkl] = (
-                sum_I_py.get(hkl, 0.0) + inten * py
-            )
-            if hkl in rocking_hkl_set:
-                if hkl not in rocking:
-                    rocking[hkl] = {}
-                rocking[hkl][float(angle)] = inten
+        integrator.add_substep(state, projected, weight)
 
-    return sum_I, sum_I_px, sum_I_py, rocking
+        if rocking_hkl_set:
+            _record_rocking(
+                rocking, projected, rocking_hkl_set, angle
+            )
+
+    return state, rocking
+
+
+def _record_rocking(rocking, projected, rocking_set, angle):
+    """
+    Store the raw (unweighted) intensity of each tracked
+    reflection at this substep angle.
+    """
+    for s in projected:
+        hkl = s["hkl"]
+        if hkl in rocking_set:
+            if hkl not in rocking:
+                rocking[hkl] = {}
+            rocking[hkl][float(angle)] = s["intensity"]
 
 
 # ----------------------------------------------------------------
-# Merging partial accumulators
+# Merging partial results
 # ----------------------------------------------------------------
 
-def _merge_sum_dicts(partials):
-    """
-    Merge a list of (sum_I, sum_I_px, sum_I_py, rocking)
-    tuples into combined dictionaries.
-    """
-    sum_I = {}
-    sum_I_px = {}
-    sum_I_py = {}
+def _merge_rocking(partials):
+    """Merge the rocking dicts from the partial results."""
     rocking = {}
-    for p_I, p_px, p_py, p_rock in partials:
-        for hkl, v in p_I.items():
-            sum_I[hkl] = sum_I.get(hkl, 0.0) + v
-        for hkl, v in p_px.items():
-            sum_I_px[hkl] = sum_I_px.get(hkl, 0.0) + v
-        for hkl, v in p_py.items():
-            sum_I_py[hkl] = sum_I_py.get(hkl, 0.0) + v
+    for _state, p_rock in partials:
         for hkl, ang_map in p_rock.items():
             if hkl not in rocking:
                 rocking[hkl] = {}
             rocking[hkl].update(ang_map)
-    return sum_I, sum_I_px, sum_I_py, rocking
+    return rocking
 
 
 # ----------------------------------------------------------------
 # Per-image integration
 # ----------------------------------------------------------------
 
-def _integrate_image(sum_I, sum_I_px, sum_I_py,
-                     intensity_cut, angle_centre_deg,
-                     image_index):
+def _integrate_image(integrator, state, intensity_cut,
+                     method, angle_centre_deg, image_index):
     """
-    Turn the merged accumulators into an ImageResult, computing
-    intensity-weighted centroids and applying the intensity
-    cut on integrated intensity.
+    Finalise the merged integrator state into an ImageResult.
     """
-    millers = []
-    px_list = []
-    py_list = []
-    int_list = []
-
-    for hkl in sorted(sum_I.keys()):
-        total = sum_I[hkl]
-        if total <= intensity_cut:
-            continue
-        px = sum_I_px[hkl] / total
-        py = sum_I_py[hkl] / total
-        millers.append(hkl)
-        px_list.append(px)
-        py_list.append(py)
-        int_list.append(total)
+    (signal, millers, px, py,
+     ints) = integrator.finalize(state, intensity_cut)
 
     return ImageResult(
         millers=millers,
-        px=np.array(px_list),
-        py=np.array(py_list),
-        intensities=np.array(int_list),
+        px=px,
+        py=py,
+        intensities=ints,
+        signal=signal,
+        method=method,
         angle_centre_deg=angle_centre_deg,
         image_index=image_index,
     )
@@ -255,7 +253,8 @@ def _integrate_image(sum_I, sum_I_px, sum_I_py,
 # ----------------------------------------------------------------
 
 def run_image(cif_file, detector, beam, geometry, scan,
-              image_index, simulator, params):
+              image_index, simulator, params,
+              integration_params):
     """
     Integrate a single image of the scan.
 
@@ -270,16 +269,19 @@ def run_image(cif_file, detector, beam, geometry, scan,
         Which image of the scan to integrate.
     simulator : Simulator
     params : EngineParams
+    integration_params : IntegrationParams
+        Selects the integrator (vector or raster) and its
+        psf_sigma / spot_percent.
 
     Returns
     -------
     (image_result, image_rocking)
       image_result : ImageResult
-          Integrated spots for this image.
+          Integrated spots, signal and noise for this image.
       image_rocking : dict (h, k, l) -> dict(angle -> intensity)
-          Per-substep intensities for the tracked reflections
-          of this image.  The driver places these on the full
-          scan axis.
+          Per-substep raw intensities for the tracked
+          reflections of this image.  The driver places these
+          on the full scan axis.
     """
     if scan.n_substeps % 2 != 0:
         print(
@@ -292,32 +294,39 @@ def run_image(cif_file, detector, beam, geometry, scan,
     start = scan.angles_deg[image_index]
     centre = start + 0.5 * scan.delta_deg
 
+    # Angular weight per substep: invariant integrated intensity.
+    weight = scan.delta_deg / scan.n_substeps
+
+    integrator = make_integrator(detector, integration_params)
+
     partials = _run_image_substeps(
         cif_file, detector, beam, geometry, simulator,
-        params, sub_angles, rocking_set,
+        params, sub_angles, rocking_set, integrator, weight,
     )
 
-    (sum_I, sum_I_px, sum_I_py,
-     image_rocking) = _merge_sum_dicts(partials)
+    states = [state for state, _rock in partials]
+    merged = merge_states(states, detector.npx, detector.npy)
+    image_rocking = _merge_rocking(partials)
 
     image_result = _integrate_image(
-        sum_I, sum_I_px, sum_I_py,
-        params.intensity_cut, centre, image_index,
+        integrator, merged, params.intensity_cut,
+        integration_params.method, centre, image_index,
     )
     return image_result, image_rocking
 
 
 def _run_image_substeps(cif_file, detector, beam, geometry,
                         simulator, params, sub_angles,
-                        rocking_set):
+                        rocking_set, integrator, weight):
     """
     Dispatch one image's substeps across worker processes and
-    return the list of partial accumulators.
+    return the list of (state, rocking) partial results.
     """
     batches = _split_batches(sub_angles, params.n_workers)
     work = [
         (cif_file, geometry, simulator, detector, beam,
-         params.base_thickness_A, batch, rocking_set)
+         params.base_thickness_A, batch, rocking_set,
+         integrator, weight)
         for batch in batches
     ]
 

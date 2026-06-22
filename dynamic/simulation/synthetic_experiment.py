@@ -94,14 +94,27 @@ def make_detector(distance_mm, npx, npy,
             "single pixel_size_mm (x). Downstream projection "
             "assumes square pixels."
         )
+    fast = np.array([1.0, 0.0, 0.0])
+    slow = np.array([0.0, 1.0, 0.0])
+    # Origin places pixel (0,0) so the beam (+z from the
+    # sample) pierces the panel at beam_centre_px, distance_mm
+    # along +z:
+    #   origin + cx*px_x*fast + cy*px_y*slow = (0, 0, distance)
+    cx, cy = beam_centre_px
+    origin = (
+        np.array([0.0, 0.0, distance_mm])
+        - cx * px_x_mm * fast
+        - cy * px_y_mm * slow
+    )
     return Detector(
         distance_mm=distance_mm,
         npx=npx,
         npy=npy,
         pixel_size_mm=px_x_mm,
         beam_centre_px=beam_centre_px,
-        fast_axis=np.array([1.0, 0.0, 0.0]),
-        slow_axis=np.array([0.0, 1.0, 0.0]),
+        fast_axis=fast,
+        slow_axis=slow,
+        origin=origin,
     )
 
 

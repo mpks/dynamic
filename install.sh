@@ -1,1 +1,1 @@
-pip3 install --user  -e . --break-system-packages
+python3 -m pip install -e . --break-system-packages
