@@ -54,10 +54,19 @@ class Beam:
 @dataclass(frozen=True)
 class Geometry:
     """
-    Crystal orientation and metric.
+    Crystal orientation and metric, sampled at scan points.
 
-    B : 3x3  reciprocal metric (columns a*, b*, c*)
-    U : 3x3  orientation matrix
+    A rotation scan of N images has N+1 scan points (the image
+    boundaries).  The crystal setting (orientation U and metric
+    B) is stored at each scan point so a scan-varying model can
+    be represented; for a static model every entry is identical.
+
+    B_mats : list of 3x3   reciprocal metric at each scan point
+    U_mats : list of 3x3   orientation (pure rotation) at each
+        scan point
+    scan_point_angles : ndarray (N+1,)
+        Absolute angle (deg) of each scan point; used to locate
+        and interpolate within an interval.
     F : 3x3  goniometer fixed rotation
     S : 3x3  goniometer setting rotation
     rotation_axis : 3-vector  scan rotation axis
@@ -65,35 +74,74 @@ class Geometry:
         Seed used to generate U (synthetic only); None for
         experiment-derived geometry.
     """
-    B: np.ndarray
-    U: np.ndarray
+    B_mats: list
+    U_mats: list
+    scan_point_angles: np.ndarray
     F: np.ndarray
     S: np.ndarray
     rotation_axis: np.ndarray
     orientation_seed: int | None = None
+
+    def base_B(self) -> np.ndarray:
+        """The metric used to set up the base atoms (the first
+        scan point; all entries are equal in the static case)."""
+        return self.B_mats[0]
+
+    def _interpolate_setting(self, angle_deg):
+        """
+        Interpolate the orientation U and metric B at an
+        absolute scan angle.
+
+        U is interpolated by spherical linear interpolation
+        (SLERP) of the bracketing scan-point rotations; B is
+        linearly interpolated.  Angles outside the scan-point
+        range clamp to the nearest interval.
+
+        Returns (U, B) at the angle.
+        """
+        angles = self.scan_point_angles
+        n = len(angles)
+        if n == 1:
+            return self.U_mats[0], self.B_mats[0]
+
+        # Locate the interval [i, i+1] containing angle_deg.
+        i = int(np.searchsorted(angles, angle_deg) - 1)
+        i = max(0, min(i, n - 2))
+        a0 = angles[i]
+        a1 = angles[i + 1]
+        span = a1 - a0
+        t = 0.0 if span == 0 else (angle_deg - a0) / span
+        t = max(0.0, min(1.0, t))
+
+        U = _slerp_rotation(self.U_mats[i],
+                            self.U_mats[i + 1], t)
+        B = (1.0 - t) * self.B_mats[i] + t * self.B_mats[i + 1]
+        return U, B
 
     def oriented_cell(self, angle_deg: float) -> np.ndarray:
         """
         Return the real-space cell (ASE row convention) at the
         given scan angle.
 
-        The construction matches the validated pipeline:
-
-          step 1: crystal-frame cell = B^{-1}  (rows)
+          step 1: crystal-frame cell = B(angle)^{-1}  (rows)
           step 2: rotate into the lab frame by
-                  S @ R(angle) @ F @ U
+                  S @ R(angle) @ F @ U(angle)
+
+        U and B are interpolated from the scan-point arrays, so
+        a scan-varying crystal model is honoured; the explicit
+        scan rotation R(angle) is still applied on top (it is
+        not contained in U).
 
         Returns
         -------
         cell_rows : ndarray (3, 3)
-            Rows are the real-space vectors a, b, c, ready to
-            pass to ase set_cell.
+            Rows are the real-space vectors a, b, c.
         """
-        crystal_cell = np.linalg.inv(self.B)   # rows = a, b, c
+        U, B = self._interpolate_setting(angle_deg)
+        crystal_cell = np.linalg.inv(B)        # rows = a, b, c
         R = axis_angle_rotation_matrix(self.rotation_axis,
                                        angle_deg)
-        full = self.S @ R @ self.F @ self.U
-        # Apply rotation to column vectors, return to rows.
+        full = self.S @ R @ self.F @ U
         cell_rows = (full @ crystal_cell.T).T
         return cell_rows
 
@@ -170,6 +218,50 @@ def axis_angle_rotation_matrix(axis, phi_deg):
     axis = axis / np.linalg.norm(axis)
     rotvec = axis * np.deg2rad(phi_deg)
     return Rotation.from_rotvec(rotvec).as_matrix()
+
+
+def polar_rotation(M):
+    """
+    Nearest pure rotation to a 3x3 matrix, via the polar
+    decomposition M = Q P (Q orthogonal, P symmetric positive
+    semi-definite).  Returns Q with det +1.
+
+    Used to extract a clean orientation U from A @ inv(B), which
+    may carry a small non-rotational part if A was refined with
+    a slightly different metric than the cell-derived B.
+    """
+    from scipy.linalg import polar
+    Q, _P = polar(np.asarray(M, dtype=float))
+    if np.linalg.det(Q) < 0:
+        # Reflect the least-significant axis to enforce det +1.
+        u, _s, vt = np.linalg.svd(Q)
+        d = np.ones(3)
+        d[-1] = -1.0
+        Q = u @ np.diag(d) @ vt
+    return Q
+
+
+def _slerp_rotation(U1, U2, t):
+    """
+    Spherical linear interpolation between two rotation
+    matrices, returning the rotation a fraction t (0..1) of the
+    way from U1 to U2.
+
+    Implemented as U(t) = dR(t) @ U1, where dR(t) is the
+    relative rotation U2 @ U1^T scaled to fraction t via its
+    axis-angle form (matching the scan-point interpolation used
+    by DIALS).
+    """
+    if t <= 0.0:
+        return np.asarray(U1, dtype=float)
+    if t >= 1.0:
+        return np.asarray(U2, dtype=float)
+    U1 = np.asarray(U1, dtype=float)
+    U2 = np.asarray(U2, dtype=float)
+    M = U2 @ U1.T
+    rotvec = Rotation.from_matrix(M).as_rotvec()
+    dR = Rotation.from_rotvec(rotvec * t).as_matrix()
+    return dR @ U1
 
 
 def get_B_matrix(ort):
@@ -253,12 +345,37 @@ def load_experiment(expt_file):
     cr = crystal["real_space_c"]
     ort = np.array([ar, br, cr])
 
+    # B always comes from the cell vectors (the cell-derived
+    # metric).  This is reused for every scan point.
     B = get_B_matrix(ort)
-    UB = np.linalg.inv(ort)
-    U = UB @ np.linalg.inv(B)
+
+    # Scan points sit at the image boundaries: N images give
+    # N+1 scan points.  Their absolute angles run from the
+    # first oscillation start in steps of delta.
+    n_images = len(angles)
+    if n_images >= 2:
+        delta = float(angles[1] - angles[0])
+    else:
+        delta = float(scan["properties"].get(
+            "oscillation_width", [1.0])[0]
+        ) if isinstance(
+            scan["properties"].get("oscillation_width"), list
+        ) else 1.0
+    start = float(angles[0]) if n_images else 0.0
+    n_scan_points = n_images + 1
+    scan_point_angles = start + delta * np.arange(
+        n_scan_points
+    )
+
+    U_mats, B_mats = _build_setting_arrays(
+        crystal, ort, B, n_scan_points
+    )
 
     geometry = Geometry(
-        B=B, U=U, F=F, S=S,
+        B_mats=B_mats,
+        U_mats=U_mats,
+        scan_point_angles=scan_point_angles,
+        F=F, S=S,
         rotation_axis=rotation_axis,
         orientation_seed=None,
     )
@@ -267,6 +384,46 @@ def load_experiment(expt_file):
     detector = _detector_from_dict(detector_d, beam.direction)
 
     return detector, beam, geometry, angles
+
+
+def _build_setting_arrays(crystal, ort, B, n_scan_points):
+    """
+    Build per-scan-point orientation (U) and metric (B) arrays.
+
+    If the crystal has 'A_at_scan_points', each scan point gets
+    its own orientation: U_i = polar_rotation(A_i @ inv(B)),
+    the nearest pure rotation to the setting matrix divided by
+    the cell-derived metric.  B is kept fixed (the cell-derived
+    metric) at every scan point for now.
+
+    Without scan-varying data, the single static orientation
+    U = inv(ort) @ inv(B) is copied to every scan point.
+    """
+    Binv = np.linalg.inv(B)
+    A_sp = crystal.get("A_at_scan_points", None)
+
+    if A_sp is not None and len(A_sp) > 0:
+        U_mats = []
+        for A_flat in A_sp:
+            A = np.array(A_flat, dtype=float).reshape(3, 3)
+            U_mats.append(polar_rotation(A @ Binv))
+        # Guard: A_at_scan_points should have n_scan_points
+        # entries; if it differs, fall back to its own length.
+        if len(U_mats) != n_scan_points:
+            print(
+                f"WARNING: A_at_scan_points has {len(U_mats)} "
+                f"entries, expected {n_scan_points}; using "
+                "the values as given."
+            )
+        B_mats = [B.copy() for _ in U_mats]
+        return U_mats, B_mats
+
+    # Static model: one orientation copied to every scan point.
+    UB = np.linalg.inv(ort)
+    U = UB @ Binv
+    U_mats = [U.copy() for _ in range(n_scan_points)]
+    B_mats = [B.copy() for _ in range(n_scan_points)]
+    return U_mats, B_mats
 
 
 def _beam_from_dict(beam_d):

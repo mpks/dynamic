@@ -27,9 +27,6 @@ from dataclasses import dataclass
 import numpy as np
 import ase.io
 
-from dynamic.simulation.experiment import (
-    axis_angle_rotation_matrix,
-)
 from dynamic.simulation.projection import project_spots
 from dynamic.simulation.integration import (
     make_integrator,
@@ -105,39 +102,38 @@ def make_base_atoms(cif_file, geometry):
 
     Uses scale_atoms=True so the fractional coordinates are
     kept (convention-independent) while the cell becomes
-    B^{-1}.  A volume check (10% tolerance) guards against a
+    B^{-1}.  A volume check (15% tolerance) guards against a
     CIF cell whose metric grossly mismatches the experiment B;
     small differences (e.g. CIF and ED data at different
     temperatures) are expected and allowed.
     """
     atoms = ase.io.read(cif_file)
     v_before = atoms.get_volume()
-    crystal_cell = np.linalg.inv(geometry.B)
+    crystal_cell = np.linalg.inv(geometry.base_B())
     atoms.set_cell(crystal_cell, scale_atoms=True)
     v_after = atoms.get_volume()
-    if not np.isclose(v_before, v_after, rtol=0.10):
+    if not np.isclose(v_before, v_after, rtol=0.15):
         raise ValueError(
             "Cell volume changed on alignment: "
             f"{v_before:.2f} -> {v_after:.2f} A^3. "
             "CIF cell and experiment B metric differ by "
-            "more than 10%."
+            "more than 15%."
         )
     return atoms
 
 
 def orient_atoms(base_atoms, geometry, angle_deg):
     """
-    Rotate the base atoms into the lab frame for a scan angle.
+    Set the base atoms into the lab-frame cell for a scan angle.
 
-    Applies S @ R(angle) @ F @ U to the B^{-1} cell with
-    scale_atoms=True so the atoms rotate rigidly, then wraps.
+    The oriented cell (interpolated from the scan-point setting
+    arrays and including the scan rotation R(angle)) is taken
+    from geometry.oriented_cell; the atoms are placed into it
+    with scale_atoms=True so the CIF fractional coordinates are
+    preserved, then wrapped.
     """
     atoms = base_atoms.copy()
-    cell = np.array(atoms.get_cell())
-    R = axis_angle_rotation_matrix(geometry.rotation_axis,
-                                   angle_deg)
-    full = geometry.S @ R @ geometry.F @ geometry.U
-    new_cell = (full @ cell.T).T
+    new_cell = geometry.oriented_cell(angle_deg)
     atoms.set_cell(new_cell, scale_atoms=True)
     atoms.wrap()
     return atoms

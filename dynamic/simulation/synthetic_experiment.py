@@ -155,9 +155,21 @@ def build_synthetic(cif_file, wavelength_A, distance_mm,
     B = B_from_cif(cif_file)
     U = random_U(orientation_seed)
     identity = np.eye(3)
+
+    # Static synthetic model: N images -> N+1 scan points, the
+    # same U and B copied to each (arrays for a uniform code
+    # path with the scan-varying experiment loader).
+    n_scan_points = n_images + 1
+    scan_point_angles = start_deg + delta_deg * np.arange(
+        n_scan_points
+    )
+    U_mats = [U.copy() for _ in range(n_scan_points)]
+    B_mats = [B.copy() for _ in range(n_scan_points)]
+
     geometry = Geometry(
-        B=B,
-        U=U,
+        B_mats=B_mats,
+        U_mats=U_mats,
+        scan_point_angles=scan_point_angles,
         F=identity,
         S=identity,
         rotation_axis=np.array([0.0, 1.0, 0.0]),
