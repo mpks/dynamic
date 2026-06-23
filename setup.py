@@ -9,7 +9,10 @@ setup(
          'console_scripts': [
              'dynamic-extract-dials = dynamic.extract_dials_experiment:main',
              'myedly = dynamic.simulation.cli:main',
-        ]
+             'plot_rocking = dynamic.bin.plot_rocking:main',
+             'integrate = dynamic.bin.rc_integrate:main',
+             'kinematic = dynamic.bin.kinematical:main',
+          ]
     },
     packages=find_packages(),
     install_requires=[
