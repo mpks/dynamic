@@ -10,19 +10,20 @@ how much of the Ewald sphere is sampled; that is abTEM's
 concern, not the projection's.
 
 The projection is the only place the real detector geometry
-enters.  The scattered ray for a reflection is
+enters.  abTEM produces the whole scattered cone with the beam
+along +z; the real beam is tilted slightly.  We rotate the
+entire cone by R_tilt, the rotation that maps +z onto the
+experimental beam direction, so the direct beam and every
+diffracted vector align with the real beam:
 
-    s1 = s0 + g ,
+    s1 = R_tilt @ ( (0, 0, k0) + (kx, ky, kz) )
 
-where s0 = k0 * (incident beam propagation direction) and
-k0 = 1 / wavelength.  The incident direction is taken from the
-experiment beam (so it is NOT assumed to be exactly +z; the
-slight experimental tilt is honoured), while g = (kx, ky, kz)
-is passed through from abTEM unchanged.
+with k0 = 1 / wavelength.  g = (kx, ky, kz) comes from abTEM
+unchanged.
 
-s1 is projected onto the real, possibly tilted, detector panel
-using the panel basis (fast axis, slow axis, origin) via the
-dxtbx D-matrix projection:
+s1 is then projected onto the real, possibly tilted, detector
+panel using the panel basis (fast axis, slow axis, origin) via
+the dxtbx D-matrix projection:
 
     d = [ fast | slow | origin ]   (columns)
     D = d^{-1}
@@ -65,6 +66,45 @@ def beam_s0(beam):
     return k0 * d
 
 
+def tilt_rotation(beam):
+    """
+    Rotation R_tilt that maps the abTEM optical axis +z onto the
+    experimental incident beam direction.
+
+    abTEM computes the whole scattered cone with the beam along
+    +z.  The real beam is tilted slightly.  R_tilt rotates the
+    entire cone (every scattered wavevector, including the
+    direct beam) so the direct beam aligns with the experimental
+    direction, then the cone is projected onto the detector.
+
+    The rotation is about the axis z x d through the angle
+    between z and d; for d == +z it is the identity.
+    """
+    z = np.array([0.0, 0.0, 1.0])
+    d = np.asarray(beam.direction, dtype=float)
+    d = d / np.linalg.norm(d)
+
+    axis = np.cross(z, d)
+    s = np.linalg.norm(axis)
+    c = float(np.dot(z, d))
+    if s < 1e-12:
+        # Parallel (or antiparallel) to +z.
+        if c > 0:
+            return np.eye(3)
+        # 180 deg: rotate about x.
+        return np.diag([1.0, -1.0, -1.0])
+    axis = axis / s
+    angle = np.arctan2(s, c)
+    # Rodrigues rotation matrix.
+    K = np.array([
+        [0.0, -axis[2], axis[1]],
+        [axis[2], 0.0, -axis[0]],
+        [-axis[1], axis[0], 0.0],
+    ])
+    return (np.eye(3) + np.sin(angle) * K
+            + (1.0 - np.cos(angle)) * (K @ K))
+
+
 def project_ray(s1, D, px_fast_mm, px_slow_mm):
     """
     Project a scattered ray s1 onto the panel using the panel
@@ -84,28 +124,35 @@ def project_ray(s1, D, px_fast_mm, px_slow_mm):
 
 
 def project_position(kx, ky, kz, beam, detector,
-                     D=None, s0=None):
+                     D=None, R_tilt=None, k0=None):
     """
     Project a single abTEM reciprocal-space vector onto the
     detector.
+
+    The abTEM scattered ray in the +z frame is
+    s1_abtem = (0, 0, k0) + (kx, ky, kz).  The whole cone is
+    rotated by R_tilt (which maps +z onto the experimental beam
+    direction) before projection, so the direct beam aligns with
+    the experimental beam and every diffracted vector rotates
+    rigidly with it:  s1 = R_tilt @ s1_abtem.
 
     Parameters
     ----------
     kx, ky, kz : float
         abTEM reciprocal-space components (A^-1), passed through
-        unchanged (beam along +z in abTEM's frame).
+        unchanged.
     beam : Beam
-        Supplies the wavelength and the experimental incident
-        beam direction used for s0.
+        Supplies the wavelength and the experimental beam
+        direction (used to build R_tilt and k0).
     detector : Detector
         Supplies the panel basis (fast/slow/origin) and pixel
         size.
     D : ndarray, optional
-        Precomputed panel matrix; pass in a loop to avoid
-        recomputing the inverse per spot.
-    s0 : ndarray, optional
-        Precomputed incident wavevector beam_s0(beam); pass in a
-        loop to avoid recomputing it per spot.
+        Precomputed panel matrix; pass in a loop.
+    R_tilt : ndarray, optional
+        Precomputed tilt_rotation(beam); pass in a loop.
+    k0 : float, optional
+        Precomputed 1 / wavelength; pass in a loop.
 
     Returns
     -------
@@ -114,9 +161,12 @@ def project_position(kx, ky, kz, beam, detector,
     """
     if D is None:
         D = panel_matrix(detector)
-    if s0 is None:
-        s0 = beam_s0(beam)
-    s1 = (s0[0] + kx, s0[1] + ky, s0[2] + kz)
+    if R_tilt is None:
+        R_tilt = tilt_rotation(beam)
+    if k0 is None:
+        k0 = 1.0 / beam.wavelength_A
+    s1_abtem = np.array([kx, ky, k0 + kz])
+    s1 = R_tilt @ s1_abtem
     px_mm = detector.pixel_size_mm
     return project_ray(s1, D, px_mm, px_mm)
 
@@ -125,9 +175,10 @@ def project_spots(spots, detector, beam):
     """
     Project all spots onto the detector.
 
-    The incident beam direction and the detector panel basis are
-    taken from the experiment; the abTEM positions (kx, ky, kz)
-    are used as given.
+    The whole abTEM scattered cone is rotated by R_tilt (mapping
+    +z onto the experimental beam direction) and then projected
+    onto the real detector panel (fast/slow/origin).  The abTEM
+    positions (kx, ky, kz) are used as given.
 
     Parameters
     ----------
@@ -149,7 +200,8 @@ def project_spots(spots, detector, beam):
     caller's choice.
     """
     D = panel_matrix(detector)
-    s0 = beam_s0(beam)
+    R_tilt = tilt_rotation(beam)
+    k0 = 1.0 / beam.wavelength_A
     px_mm = detector.pixel_size_mm
 
     out = []
@@ -161,7 +213,8 @@ def project_spots(spots, detector, beam):
         kx = positions[i][0]
         ky = positions[i][1]
         kz = positions[i][2]
-        s1 = (s0[0] + kx, s0[1] + ky, s0[2] + kz)
+        s1_abtem = np.array([kx, ky, k0 + kz])
+        s1 = R_tilt @ s1_abtem
         proj = project_ray(s1, D, px_mm, px_mm)
         if proj is None:
             continue
