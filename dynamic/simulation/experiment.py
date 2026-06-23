@@ -390,39 +390,54 @@ def _build_setting_arrays(crystal, ort, B, n_scan_points):
     """
     Build per-scan-point orientation (U) and metric (B) arrays.
 
-    If the crystal has 'A_at_scan_points', each scan point gets
-    its own orientation: U_i = polar_rotation(A_i @ inv(B)),
-    the nearest pure rotation to the setting matrix divided by
-    the cell-derived metric.  B is kept fixed (the cell-derived
-    metric) at every scan point for now.
+    For every scan point we have a setting matrix A (from
+    'A_at_scan_points' when present, otherwise the single static
+    A = inv(ort) copied to each point).  For each A:
 
-    Without scan-varying data, the single static orientation
-    U = inv(ort) @ inv(B) is copied to every scan point.
+      U = polar_rotation(A @ inv(B_cell))   nearest pure
+          rotation to the setting matrix divided by the
+          cell-derived metric (as before);
+      B = U^{-1} @ A                          the metric that
+          makes A = U B exact.
+
+    Because U is a pure rotation, |B h| = |A h| for every
+    reflection, so the simulated reciprocal-lattice magnitudes
+    match the experiment's setting matrix exactly.  The
+    cell-derived B_cell is used only as the reference for the
+    polar decomposition; the stored B is recomputed from A and
+    U and is interpolated per scan point.
     """
-    Binv = np.linalg.inv(B)
+    B_cell_inv = np.linalg.inv(B)
     A_sp = crystal.get("A_at_scan_points", None)
 
     if A_sp is not None and len(A_sp) > 0:
-        U_mats = []
-        for A_flat in A_sp:
-            A = np.array(A_flat, dtype=float).reshape(3, 3)
-            U_mats.append(polar_rotation(A @ Binv))
-        # Guard: A_at_scan_points should have n_scan_points
-        # entries; if it differs, fall back to its own length.
-        if len(U_mats) != n_scan_points:
+        A_list = [
+            np.array(a, dtype=float).reshape(3, 3)
+            for a in A_sp
+        ]
+        if len(A_list) != n_scan_points:
             print(
-                f"WARNING: A_at_scan_points has {len(U_mats)} "
+                f"WARNING: A_at_scan_points has {len(A_list)} "
                 f"entries, expected {n_scan_points}; using "
                 "the values as given."
             )
-        B_mats = [B.copy() for _ in U_mats]
-        return U_mats, B_mats
+    else:
+        # Static model: a single setting matrix A = inv(ort),
+        # copied to every scan point.
+        A_static = np.linalg.inv(ort)
+        A_list = [
+            A_static.copy() for _ in range(n_scan_points)
+        ]
 
-    # Static model: one orientation copied to every scan point.
-    UB = np.linalg.inv(ort)
-    U = UB @ Binv
-    U_mats = [U.copy() for _ in range(n_scan_points)]
-    B_mats = [B.copy() for _ in range(n_scan_points)]
+    U_mats = []
+    B_mats = []
+    for A in A_list:
+        U = polar_rotation(A @ B_cell_inv)
+        U_mats.append(U)
+        # B = U^{-1} A = U^T A (U is a rotation); A = U B exact,
+        # and |B h| = |A h|.
+        B_mats.append(U.T @ A)
+
     return U_mats, B_mats
 
 
