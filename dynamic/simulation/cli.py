@@ -19,8 +19,14 @@ from __future__ import annotations
 
 import argparse
 
+import numpy as np
+
 from dynamic.simulation.experiment import load_experiment
 from dynamic.simulation.experiment import Scan
+from dynamic.simulation.experiment import (
+    Detector,
+    _ray_intersection_px,
+)
 from dynamic.simulation.synthetic_experiment import (
     build_synthetic_calibrated,
 )
@@ -266,12 +272,75 @@ def _load_rocking_hkl(path):
 
 
 def _setup_experiment(args):
-    """Build domain objects for experiment mode."""
-    detector, beam, geometry, angles = load_experiment(
+    """
+    Build domain objects for experiment mode.
+
+    The detector is swapped for a fixed Eiger (512x512, 0.075 mm
+    pixels) but positioned to match the experiment: the fast and
+    slow axes, the beam direction and the sample-to-detector
+    distance are all taken from the experiment, and the Eiger is
+    placed so the direct beam pierces it at the same lab-space
+    point (in mm) as the original panel — i.e. the beam lands at
+    the Eiger centre.  This keeps the crystal orientation
+    relative to the direct beam correct; only the pixel size and
+    array extent change, so the pattern covers lower resolution.
+    """
+    expt_detector, beam, geometry, angles = load_experiment(
         args.expt_file
+    )
+
+    detector = _eiger_matched_detector(
+        expt_detector, beam,
+        npx=DEFAULTS["npx"], npy=DEFAULTS["npy"],
+        pixel_size_mm=DEFAULTS["pixel_size_mm"],
     )
     scan = _make_scan(angles, args.n_substeps)
     return detector, beam, geometry, scan
+
+
+def _eiger_matched_detector(expt_detector, beam,
+                            npx, npy, pixel_size_mm):
+    """
+    Build an Eiger panel (npx x npy, pixel_size_mm) that keeps
+    the experiment's orientation and distance and is centred on
+    the direct beam.
+
+    Kept from the experiment: fast_axis, slow_axis, distance,
+    and the lab-space beam-panel intersection point.  The Eiger
+    origin is chosen so its centre pixel sits at that same
+    intersection point, so the beam still hits the same physical
+    spot at the same distance and orientation.
+    """
+    fast = np.asarray(expt_detector.fast_axis, dtype=float)
+    slow = np.asarray(expt_detector.slow_axis, dtype=float)
+    origin0 = np.asarray(expt_detector.origin, dtype=float)
+
+    # Beam-panel intersection on the ORIGINAL panel, in pixels,
+    # then converted to the lab-space point P (mm).
+    px0 = expt_detector.pixel_size_mm
+    cx0, cy0 = _ray_intersection_px(
+        beam.direction, fast, slow, origin0, px0, px0
+    )
+    P = origin0 + cx0 * px0 * fast + cy0 * px0 * slow
+
+    # Place the Eiger centre pixel at P; origin is P shifted back
+    # by half the panel along fast and slow.
+    cx = npx / 2.0
+    cy = npy / 2.0
+    origin = (
+        P - cx * pixel_size_mm * fast
+        - cy * pixel_size_mm * slow
+    )
+
+    return Detector(
+        distance_mm=expt_detector.distance_mm,
+        npx=npx, npy=npy,
+        pixel_size_mm=pixel_size_mm,
+        beam_centre_px=(cx, cy),
+        fast_axis=fast,
+        slow_axis=slow,
+        origin=origin,
+    )
 
 
 def _setup_synthetic(args):

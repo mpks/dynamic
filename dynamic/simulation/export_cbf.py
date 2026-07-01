@@ -230,20 +230,53 @@ def build_header(distance_mm, pixel_size_mm, beam_centre_px,
     return "\r\n".join(lines) + "\r\n"
 
 
+def build_ebeam_header(energy_eV=160400.0):
+    """
+    Build the _array_data.ebeam_header block, matching the
+    ELDICO electron-source header.  FormatCBFMiniEigerQuadroED1
+    keys on this block to set up the electron probe.
+    """
+    lines = [
+        f"# HV:         {energy_eV:.1f} V",
+        "# Emission:   40.0 mA",
+        "# Power:      6.416 W",
+        "# Vacuum:     2.7600e-07 bar",
+        "# Flux:       0.0000 e/(s*Ang^2)",
+        "# Dose:       0.0000 e/Ang^2",
+        "# SAMPLE:X:   0.000 um",
+        "# SAMPLE:Z:   0.000 um",
+        "# GONIO:X:    0.000 um",
+        "# GONIO:Y:    0.000 um",
+    ]
+    return "\r\n".join(lines) + "\r\n"
+
+
 # ----------------------------------------------------------------
 # Writing
 # ----------------------------------------------------------------
 
-def write_cbf(image_int32, header_contents, output_path):
+def write_cbf(image_int32, header_contents, output_path,
+              ebeam_header=None):
     """
-    Write a miniCBF using the PILATUS_1.2 convention so dxtbx
-    selects the electron-probe Eiger format.
+    Write a miniCBF matching the ELDICO ED-1 layout so dxtbx
+    selects FormatCBFMiniEigerQuadroED1.  The detector axes are
+    not stored in the file (the miniCBF format has no fields for
+    them); dxtbx's format reader reconstructs them, so both real
+    and simulated files get the same geometry.
     """
     import fabio.cbfimage
     fabio_header = {
+        "_audit.creation_method": (
+            "Created by dynamic.simulation"
+        ),
+        "_audit_author.name": "dynamic.simulation",
         "_array_data.header_convention": "PILATUS_1.2",
         "_array_data.header_contents": header_contents,
     }
+    if ebeam_header is not None:
+        fabio_header["_array_data.ebeam_header"] = (
+            ebeam_header
+        )
     cbf = fabio.cbfimage.CbfImage(
         data=image_int32, header=fabio_header
     )
@@ -259,10 +292,11 @@ def cbf_filename(out_dir, method, tag, image_index):
 def save_image_cbf(image_result, detector, beam, scan,
                    params, out_dir, tag):
     """
-    Render one ImageResult to a CBF during a simulation run.
+    Render one ImageResult to an Eiger miniCBF during a run.
 
-    Uses the in-memory ImageResult signal/noise and the
-    detector/beam/scan objects for the header.
+    The detector is always the fixed Eiger 512x512, so the
+    ELDICO/Eiger miniCBF header (read by
+    FormatCBFMiniEigerQuadroED1) is always valid.
     """
     os.makedirs(out_dir, exist_ok=True)
 
@@ -273,14 +307,15 @@ def save_image_cbf(image_result, detector, beam, scan,
         image_result.signal, detector.beam_centre_px,
         params, image_result.image_index,
     )
+    path = cbf_filename(
+        out_dir, image_result.method, tag,
+        image_result.image_index,
+    )
     header = build_header(
         detector.distance_mm, detector.pixel_size_mm,
         detector.beam_centre_px, beam.wavelength_A,
         start_angle, delta,
     )
-    path = cbf_filename(
-        out_dir, image_result.method, tag,
-        image_result.image_index,
-    )
-    write_cbf(img, header, path)
+    ebeam = build_ebeam_header(beam.energy_eV)
+    write_cbf(img, header, path, ebeam_header=ebeam)
     return path

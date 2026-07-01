@@ -30,25 +30,38 @@ import numpy as np
 from dynamic.simulation.export_cbf import (
     CbfParams,
     build_header,
+    build_ebeam_header,
     render_image,
     write_cbf,
+)
+from dynamic.simulation.experiment import (
+    _wavelength_to_energy_eV,
 )
 
 
 def _load_npz(path):
     """Load a per-image NPZ into a plain dict of values."""
     d = np.load(path, allow_pickle=False)
-    return {
+    rec = {
         "method": str(d["method"]),
         "signal": d["signal"],
         "image_index": int(d["image_index"]),
         "angle_centre_deg": float(d["angle_centre_deg"]),
         "delta_deg": float(d["delta_deg"]),
+        "npx": int(d["npx"]),
+        "npy": int(d["npy"]),
         "pixel_size_mm": float(d["pixel_size_mm"]),
         "distance_mm": float(d["distance_mm"]),
         "beam_centre_px": tuple(d["beam_centre_px"]),
         "wavelength_A": float(d["wavelength_A"]),
     }
+    # Panel basis (present in newer NPZ files; needed for full
+    # CBF).  Fall back to ideal axes if absent.
+    if "fast_axis" in d:
+        rec["fast_axis"] = d["fast_axis"]
+        rec["slow_axis"] = d["slow_axis"]
+        rec["origin"] = d["origin"]
+    return rec
 
 
 def _out_cbf_path(out_dir, method, tag, image_index):
@@ -58,7 +71,8 @@ def _out_cbf_path(out_dir, method, tag, image_index):
 
 def render_npz(path, params, out_dir, tag):
     """
-    Render one per-image NPZ to a CBF with the given params.
+    Render one per-image NPZ to an Eiger miniCBF with the given
+    params.
     """
     rec = _load_npz(path)
 
@@ -69,16 +83,18 @@ def render_npz(path, params, out_dir, tag):
 
     delta = rec["delta_deg"]
     start_angle = rec["angle_centre_deg"] - delta / 2.0
+    out_path = _out_cbf_path(
+        out_dir, rec["method"], tag, rec["image_index"]
+    )
+
     header = build_header(
         rec["distance_mm"], rec["pixel_size_mm"],
         rec["beam_centre_px"], rec["wavelength_A"],
         start_angle, delta,
     )
-
-    out_path = _out_cbf_path(
-        out_dir, rec["method"], tag, rec["image_index"]
-    )
-    write_cbf(img, header, out_path)
+    energy_eV = _wavelength_to_energy_eV(rec["wavelength_A"])
+    ebeam = build_ebeam_header(energy_eV)
+    write_cbf(img, header, out_path, ebeam_header=ebeam)
     return out_path
 
 

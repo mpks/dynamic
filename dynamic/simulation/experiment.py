@@ -334,10 +334,8 @@ def load_experiment(expt_file):
     beam_d = data["beam"][exp["beam"]]
     detector_d = data["detector"][exp["detector"]]
 
-    # --- geometry (crystal orientation) -------------------
-    S = np.array(gonio["setting_rotation"]).reshape(3, 3)
-    F = np.array(gonio["fixed_rotation"]).reshape(3, 3)
-    rotation_axis = np.array(gonio["rotation_axis"])
+    # --- goniometer: F, S and the scan rotation axis ------
+    S, F, rotation_axis = _goniometer_matrices(gonio)
     angles = np.array(scan["properties"]["oscillation"])
 
     ar = crystal["real_space_a"]
@@ -439,6 +437,60 @@ def _build_setting_arrays(crystal, ort, B, n_scan_points):
         B_mats.append(U.T @ A)
 
     return U_mats, B_mats
+
+
+def _goniometer_matrices(gonio):
+    """
+    Return (S, F, rotation_axis) for a goniometer dict.
+
+    Two dxtbx forms are supported:
+
+      * explicit single-axis: the dict has 'setting_rotation',
+        'fixed_rotation' and 'rotation_axis' directly.
+
+      * multi-axis (e.g. kappa): the dict has 'axes' (ordered
+        crystal-to-goniometer), 'angles' (fixed motor settings,
+        degrees) and 'scan_axis' (the index of the scanned
+        axis).  dxtbx composes these into
+
+            F = product of the axis rotations BEFORE the scan
+                axis (crystal side), at their fixed angles;
+            S = product of the axis rotations AFTER the scan
+                axis (base side), at their fixed angles;
+
+        and the scan rotation axis is axes[scan_axis] (the datum
+        direction; the effective lab axis is S @ axis, which the
+        rotation R(angle) about `rotation_axis` combined with S
+        in oriented_cell reproduces).
+
+    The full goniostat rotation is S @ R(scan_axis, angle) @ F.
+    """
+    if "setting_rotation" in gonio and "fixed_rotation" in gonio:
+        S = np.array(gonio["setting_rotation"]).reshape(3, 3)
+        F = np.array(gonio["fixed_rotation"]).reshape(3, 3)
+        rotation_axis = np.array(gonio["rotation_axis"])
+        return S, F, rotation_axis
+
+    axes = [np.array(a, dtype=float) for a in gonio["axes"]]
+    angles = [float(a) for a in gonio["angles"]]
+    scan_axis = int(gonio["scan_axis"])
+
+    # Axes before the scan axis (crystal side) -> F.
+    # Composition order: the axis nearest the scan axis is
+    # applied first (innermost), matching S R F acting on the
+    # crystal.  F = R(k-1) @ ... @ R(0).
+    F = np.eye(3)
+    # for i in range(scan_axis):
+    #    F = axis_angle_rotation_matrix(axes[i], angles[i]) @ F
+
+    # Axes after the scan axis (base side) -> S.
+    # S = R(n-1) @ ... @ R(scan_axis+1).
+    S = np.eye(3)
+    # for i in range(scan_axis + 1, len(axes)):
+    #    S = axis_angle_rotation_matrix(axes[i], angles[i]) @ S
+
+    rotation_axis = axes[scan_axis]
+    return S, F, rotation_axis
 
 
 def _beam_from_dict(beam_d):

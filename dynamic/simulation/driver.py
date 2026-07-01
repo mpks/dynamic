@@ -224,7 +224,6 @@ def run(cif_file, detector, beam, geometry, scan, simulator,
 
     image_results = []
     for n, image_index in enumerate(selected):
-
         centre = (
             scan.angles_deg[image_index]
             + 0.5 * scan.delta_deg
