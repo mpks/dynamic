@@ -261,8 +261,13 @@ def build_parser():
 # Setup helpers
 # ----------------------------------------------------------------
 
-def _make_scan(angles, n_substeps):
-    return Scan(angles_deg=angles, n_substeps=n_substeps)
+def _make_scan(angles, n_substeps, rotation_axis=None):
+    if rotation_axis is None:
+        rotation_axis = np.array([0.0, 1.0, 0.0])
+    return Scan(
+        angles_deg=angles, n_substeps=n_substeps,
+        rotation_axis=np.asarray(rotation_axis, dtype=float),
+    )
 
 
 def _load_rocking_hkl(path):
@@ -294,7 +299,10 @@ def _setup_experiment(args):
         npx=DEFAULTS["npx"], npy=DEFAULTS["npy"],
         pixel_size_mm=DEFAULTS["pixel_size_mm"],
     )
-    scan = _make_scan(angles, args.n_substeps)
+    scan = _make_scan(
+        angles, args.n_substeps,
+        rotation_axis=geometry.rotation_axis,
+    )
     return detector, beam, geometry, scan
 
 
@@ -305,11 +313,20 @@ def _eiger_matched_detector(expt_detector, beam,
     the experiment's orientation and distance and is centred on
     the direct beam.
 
-    Kept from the experiment: fast_axis, slow_axis, distance,
-    and the lab-space beam-panel intersection point.  The Eiger
-    origin is chosen so its centre pixel sits at that same
-    intersection point, so the beam still hits the same physical
-    spot at the same distance and orientation.
+    Kept from the experiment: fast_axis, distance, and the
+    lab-space beam-panel intersection point.  The Eiger origin
+    is chosen so its centre pixel sits at that same intersection
+    point, so the beam still hits the same physical spot at the
+    same distance and orientation.
+
+    The slow axis is inverted relative to the experiment panel.
+    The ELDICO/Eiger miniCBF reader (FormatCBFMiniEigerQuadroED1)
+    reconstructs the panel with the slow axis pointing opposite
+    to the experiment's stored slow axis, so images written with
+    the experiment's slow direction come out flipped vertically
+    when read back.  Inverting the slow axis here (and keeping
+    the beam centred) cancels that flip while preserving the
+    beam-intersection point.
     """
     fast = np.asarray(expt_detector.fast_axis, dtype=float)
     slow = np.asarray(expt_detector.slow_axis, dtype=float)
@@ -322,6 +339,10 @@ def _eiger_matched_detector(expt_detector, beam,
         beam.direction, fast, slow, origin0, px0, px0
     )
     P = origin0 + cx0 * px0 * fast + cy0 * px0 * slow
+
+    # Invert the slow axis to match the miniCBF reader's row
+    # convention (cancels the vertical flip).
+    slow = -slow
 
     # Place the Eiger centre pixel at P; origin is P shifted back
     # by half the panel along fast and slow.

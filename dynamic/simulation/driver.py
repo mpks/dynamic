@@ -181,6 +181,50 @@ def _write_image_outputs(image_result, detector, beam, scan,
 # Top-level run
 # ----------------------------------------------------------------
 
+def write_site_phil(detector, beam, scan, out_dir, tag):
+    """
+    Write a DIALS site.phil that injects the true geometry when
+    importing the simulated CBFs, since the miniCBF header cannot
+    carry the rotation-axis vector or the panel orientation.
+
+    Contains geometry.scan.oscillation (start, width),
+    geometry.goniometer.axes (the real rotation axis) and
+    geometry.detector.hierarchy (fast/slow axes and origin).
+    Import with:
+        dials.import template=... site.phil
+    """
+    start = float(scan.angles_deg[0])
+    width = scan.delta_deg
+    ax = np.asarray(scan.rotation_axis, dtype=float)
+    fast = np.asarray(detector.fast_axis, dtype=float)
+    slow = np.asarray(detector.slow_axis, dtype=float)
+    origin = np.asarray(detector.origin, dtype=float)
+
+    def vec(v):
+        return ",".join(f"{x:.8f}" for x in v)
+
+    lines = [
+        f"geometry.scan.oscillation={start:.6f},{width:.6f}",
+        f"geometry.goniometer.axes={vec(ax)}",
+        "geometry.detector.hierarchy{",
+        f"  fast_axis={vec(fast)}",
+        f"  slow_axis={vec(slow)}",
+        f"  origin={vec(origin)}",
+        "}",
+        "",
+    ]
+    path = os.path.join(out_dir, f"site_{tag}.phil")
+    with open(path, "w") as f:
+        f.write("\n".join(lines))
+    print(
+        f"  wrote {os.path.basename(path)} "
+        "(import with: dials.import template=... "
+        f"{os.path.basename(path)})",
+        flush=True,
+    )
+    return path
+
+
 def run(cif_file, detector, beam, geometry, scan, simulator,
         engine_params, integration_params, cbf_params,
         out_dir, tag, image_selection=None, write_cbf=True,
@@ -251,6 +295,7 @@ def run(cif_file, detector, beam, geometry, scan, simulator,
 
     rocking_result = RockingResult(axis, curves)
     save_rocking(rocking_result, out_dir, tag)
+    write_site_phil(detector, beam, scan, out_dir, tag)
 
     print("Driver finished.")
     return image_results, rocking_result

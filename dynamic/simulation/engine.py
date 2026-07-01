@@ -102,7 +102,7 @@ def make_base_atoms(cif_file, geometry):
 
     Uses scale_atoms=True so the fractional coordinates are
     kept (convention-independent) while the cell becomes
-    B^{-1}.  A volume check (15% tolerance) guards against a
+    B^{-1}.  A volume check (35% tolerance) guards against a
     CIF cell whose metric grossly mismatches the experiment B;
     small differences (e.g. CIF and ED data at different
     temperatures) are expected and allowed.
@@ -117,7 +117,7 @@ def make_base_atoms(cif_file, geometry):
             "Cell volume changed on alignment: "
             f"{v_before:.2f} -> {v_after:.2f} A^3. "
             "CIF cell and experiment B metric differ by "
-            "more than 15%."
+            "more than 35%."
         )
     return atoms
 

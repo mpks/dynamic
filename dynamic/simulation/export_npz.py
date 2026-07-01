@@ -87,6 +87,7 @@ def save_image(image, detector, beam, scan, out_dir, tag):
         fast_axis=np.asarray(detector.fast_axis),
         slow_axis=np.asarray(detector.slow_axis),
         origin=np.asarray(detector.origin),
+        rotation_axis=np.asarray(scan.rotation_axis),
         wavelength_A=beam.wavelength_A,
     )
     return path

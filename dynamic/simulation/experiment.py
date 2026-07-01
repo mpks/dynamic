@@ -156,9 +156,17 @@ class Scan:
         following the DIALS convention of omitting it).
     n_substeps : int
         Number of sub-angles integrated within each image.
+    rotation_axis : ndarray
+        The scan rotation axis (lab frame), carried from the
+        experiment goniometer.  The miniCBF header cannot store
+        this vector, so it is saved to the NPZ and written to a
+        DIALS site.phil for import.
     """
     angles_deg: np.ndarray
     n_substeps: int
+    rotation_axis: np.ndarray = field(
+        default_factory=lambda: np.array([0.0, 1.0, 0.0])
+    )
 
     @property
     def delta_deg(self) -> float:
@@ -446,24 +454,16 @@ def _goniometer_matrices(gonio):
     Two dxtbx forms are supported:
 
       * explicit single-axis: the dict has 'setting_rotation',
-        'fixed_rotation' and 'rotation_axis' directly.
+        'fixed_rotation' and 'rotation_axis' directly; these are
+        used as given.
 
       * multi-axis (e.g. kappa): the dict has 'axes' (ordered
-        crystal-to-goniometer), 'angles' (fixed motor settings,
-        degrees) and 'scan_axis' (the index of the scanned
-        axis).  dxtbx composes these into
+        crystal-to-goniometer) and 'scan_axis' (the index of the
+        scanned axis).  Here S and F are both set to the identity
+        and the scan rotation axis is taken directly as
+        axes[scan_axis].
 
-            F = product of the axis rotations BEFORE the scan
-                axis (crystal side), at their fixed angles;
-            S = product of the axis rotations AFTER the scan
-                axis (base side), at their fixed angles;
-
-        and the scan rotation axis is axes[scan_axis] (the datum
-        direction; the effective lab axis is S @ axis, which the
-        rotation R(angle) about `rotation_axis` combined with S
-        in oriented_cell reproduces).
-
-    The full goniostat rotation is S @ R(scan_axis, angle) @ F.
+    The goniostat rotation is S @ R(scan_axis, angle) @ F.
     """
     if "setting_rotation" in gonio and "fixed_rotation" in gonio:
         S = np.array(gonio["setting_rotation"]).reshape(3, 3)
@@ -475,20 +475,11 @@ def _goniometer_matrices(gonio):
     angles = [float(a) for a in gonio["angles"]]
     scan_axis = int(gonio["scan_axis"])
 
-    # Axes before the scan axis (crystal side) -> F.
-    # Composition order: the axis nearest the scan axis is
-    # applied first (innermost), matching S R F acting on the
-    # crystal.  F = R(k-1) @ ... @ R(0).
+    # No explicit setting/fixed rotation present: use identity
+    # for both S and F and take the scan rotation axis directly
+    # from the goniometer axes.
     F = np.eye(3)
-    # for i in range(scan_axis):
-    #    F = axis_angle_rotation_matrix(axes[i], angles[i]) @ F
-
-    # Axes after the scan axis (base side) -> S.
-    # S = R(n-1) @ ... @ R(scan_axis+1).
     S = np.eye(3)
-    # for i in range(scan_axis + 1, len(axes)):
-    #    S = axis_angle_rotation_matrix(axes[i], angles[i]) @ S
-
     rotation_axis = axes[scan_axis]
     return S, F, rotation_axis
 
